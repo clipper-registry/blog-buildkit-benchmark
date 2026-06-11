@@ -3,9 +3,11 @@ name: benchmark
 # Builds the clipper buildkit fork (moby/buildkit:local), sets up the upstream
 # and clipper-aware builders, runs the s1-s4 scenarios, and reports the timings.
 #
-# Required repository secrets:
-#   BUILDKIT_REPO_TOKEN        PAT with read access to clipper-registry/buildkit
-#                              (GITHUB_TOKEN can't reach another repo).
+# The clipper buildkit image is pulled from ghcr.io using the built-in
+# GITHUB_TOKEN (packages: read) -- no extra secret needed. The ghcr package must
+# grant this repo read access (org-internal/public, or add it explicitly).
+#
+# Required repository or org secrets:
 #   CLIPPER_REGISTRY_USERNAME  clipper.dev push credentials (s2-s4 push there).
 #   CLIPPER_REGISTRY_PASSWORD
 #   DOCKERHUB_USERNAME         docker.io/clipperregistry push credentials (s1).
@@ -23,10 +25,14 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
-      buildkit_ref:
-        description: clipper-registry/buildkit ref to build moby/buildkit:local from
-        default: main
+      buildkit_image:
+        description: clipper buildkit image (ghcr, including tag) to benchmark
+        default: ghcr.io/clipper-registry/buildkit:latest
         type: string
+
+permissions:
+  contents: read
+  packages: read
 
 # Scenarios push fixed bench tags to the real registries; serialize runs.
 concurrency:
@@ -47,23 +53,17 @@ jobs:
       - name: Checkout benchmarks
         uses: actions/checkout@v4
 
-      - name: Checkout clipper-registry/buildkit
-        uses: actions/checkout@v4
-        with:
-          repository: clipper-registry/buildkit
-          ref: ${{ inputs.buildkit_ref || 'main' }}
-          token: ${{ secrets.BUILDKIT_REPO_TOKEN }}
-          path: buildkit
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build moby/buildkit:local (clipper fork)
-        working-directory: buildkit
+      - name: Pull clipper buildkit image from ghcr
+        env:
+          BUILDKIT_IMAGE: ${{ inputs.buildkit_image || 'ghcr.io/clipper-registry/buildkit:latest' }}
         run: |
-          docker buildx bake image \
-            --set image.cache-from=type=gha \
-            --set image.cache-to=type=gha,mode=max
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker pull "$BUILDKIT_IMAGE"
+          # setup.sh expects the clipper builder image as moby/buildkit:local
+          docker tag "$BUILDKIT_IMAGE" moby/buildkit:local
 
       - name: Registry login
         run: |
