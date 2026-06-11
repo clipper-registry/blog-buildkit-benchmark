@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# Run one timed docker buildx build, append wall-clock to results.txt.
+#
+# Usage:
+#   ./run-scenario.sh <id> <builder> <base> <target> <output> <cache-repo> [--mount]
+#
+# Builds these cache flags from <cache-repo> + <id>:
+#   --cache-to   type=registry,ref=<cache-repo>:<id>,mode=max
+#   --cache-from type=registry,ref=<cache-repo>:<id>
+# If --mount is passed, also adds:
+#   --cache-to   type=registry,ref=<cache-repo>:<id>-mounts,mode=cache-mount
+#   --cache-from type=registry,ref=<cache-repo>:<id>-mounts,mode=cache-mount
+#
+# Also passes --build-arg CACHE_BUST=<nanoseconds> so the Dockerfile's compile
+# step has a different source content per invocation.
+set -euo pipefail
+
+id="$1"
+builder="$2"
+base="$3"
+target="$4"
+output="$5"
+cache_repo="$6"
+mount_flag="${7:-}"
+
+# Capture this scenario's full stdout+stderr to a per-scenario log while still
+# streaming live to the terminal. The redirect is applied to the script's own
+# file descriptors via exec, so the build command below stays bare (no pipe or
+# redirect attached to it) and its real exit code is preserved. Without this,
+# buildx's failure output went only to the terminal and was lost; only the
+# RESULT line landed in results.txt.
+log="${id}-build.log"
+: >"$log"
+exec > >(tee -a "$log") 2>&1
+
+# Optional CACHE_SUFFIX lets callers point at a fresh (cold) cache key without
+# touching the existing tags, e.g. CACHE_SUFFIX=-t1700000000.
+key="${id}${CACHE_SUFFIX:-}"
+cache=(
+    --cache-to   "type=registry,ref=${cache_repo}:${key},mode=max"
+    --cache-from "type=registry,ref=${cache_repo}:${key}"
+)
+if [ "$mount_flag" = "--mount" ]; then
+    cache+=(
+        --cache-to   "type=registry,ref=${cache_repo}:${key}-mounts,mode=cache-mount"
+        --cache-from "type=registry,ref=${cache_repo}:${key}-mounts,mode=cache-mount"
+    )
+fi
+
+printf '\n=== %s ===\n' "$id" | tee -a results.txt
+
+# Prune local builder cache so the timed build reflects only what
+# cache-from can pull back from the registry, not whatever happened to be
+# sitting in the builder from a prior invocation.
+docker buildx prune -af --builder "$builder" >/dev/null
+
+start=$SECONDS
+if docker buildx build --builder "$builder" \
+        --build-arg "BASE_IMAGE=${base}" \
+        --build-arg "CACHE_BUST=$(date +%s%N)" \
+        --output "type=${output},name=${target},push=true" \
+        "${cache[@]}" \
+        .; then
+    rc=0
+else
+    rc=$?
+fi
+elapsed=$((SECONDS - start))
+printf 'RESULT label=%q exit=%d seconds=%d\n' "$id" "$rc" "$elapsed" | tee -a results.txt
+exit "$rc"

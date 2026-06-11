@@ -1,0 +1,101 @@
+name: benchmark
+
+# Builds the clipper buildkit fork (moby/buildkit:local), sets up the upstream
+# and clipper-aware builders, runs the s1-s4 scenarios, and reports the timings.
+#
+# Required repository secrets:
+#   BUILDKIT_REPO_TOKEN        PAT with read access to clipper-registry/buildkit
+#                              (GITHUB_TOKEN can't reach another repo).
+#   CLIPPER_REGISTRY_USERNAME  clipper.dev push credentials (s2-s4 push there).
+#   CLIPPER_REGISTRY_PASSWORD
+#   DOCKERHUB_USERNAME         docker.io/clipperregistry push credentials (s1).
+#   DOCKERHUB_TOKEN
+#
+# Known limitations on GitHub-hosted runners (see README "CI" section):
+#   - Timings are noisy (shared VMs); use for trend/regression, not absolutes.
+#   - The clipper.dev/clipper/cuda base must have a linux/amd64 variant, or
+#     s2-s4 fail to pull on the amd64 runner.
+#   - s4 (lazy FUSE snapshotter) needs /dev/fuse in the docker-container builder
+#     and may not work; bench.sh continues past it so s1-s3 still report.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      buildkit_ref:
+        description: clipper-registry/buildkit ref to build moby/buildkit:local from
+        default: main
+        type: string
+
+# Scenarios push fixed bench tags to the real registries; serialize runs.
+concurrency:
+  group: benchmark-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL
+          docker image prune -af || true
+          df -h /
+
+      - name: Checkout benchmarks
+        uses: actions/checkout@v4
+
+      - name: Checkout clipper-registry/buildkit
+        uses: actions/checkout@v4
+        with:
+          repository: clipper-registry/buildkit
+          ref: ${{ inputs.buildkit_ref || 'main' }}
+          token: ${{ secrets.BUILDKIT_REPO_TOKEN }}
+          path: buildkit
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build moby/buildkit:local (clipper fork)
+        working-directory: buildkit
+        run: |
+          docker buildx bake image \
+            --set image.cache-from=type=gha \
+            --set image.cache-to=type=gha,mode=max
+
+      - name: Registry login
+        run: |
+          echo "${{ secrets.CLIPPER_REGISTRY_PASSWORD }}" \
+            | docker login clipper.dev -u "${{ secrets.CLIPPER_REGISTRY_USERNAME }}" --password-stdin
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" \
+            | docker login docker.io -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+
+      - name: Set up builders
+        run: ./setup.sh
+
+      - name: Run scenarios
+        run: ./bench.sh
+
+      - name: Report results
+        if: always()
+        run: |
+          {
+            echo "## Benchmark results"
+            echo '| scenario | exit | seconds |'
+            echo '| --- | --- | --- |'
+            grep '^RESULT' results.txt 2>/dev/null \
+              | sed -E 's/RESULT label=("?)([^" ]+)\1 exit=([0-9]+) seconds=([0-9]+)/| \2 | \3 | \4 |/' \
+              || echo '| (no results) | | |'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload results and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: |
+            results.txt
+            *-build.log
+          if-no-files-found: ignore
