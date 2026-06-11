@@ -7,11 +7,9 @@ name: benchmark
 # GITHUB_TOKEN (packages: read) -- no extra secret needed. The ghcr package must
 # grant this repo read access (org-internal/public, or add it explicitly).
 #
-# Required repository or org secrets:
-#   CLIPPER_REGISTRY_USERNAME  clipper.dev push credentials (s2-s4 push there).
-#   CLIPPER_REGISTRY_PASSWORD
-#   DOCKERHUB_USERNAME         docker.io/clipperregistry push credentials (s1).
-#   DOCKERHUB_TOKEN
+# Required repository or org secrets (usernames are hardcoded, not secret):
+#   CLIPPER_CI_CREDENTIALS     clipper.dev push token; login is `-u token` (s2-s4).
+#   DOCKERHUB_TOKEN            docker.io push token; login is `-u clipperkyle` (s1).
 #
 # Known limitations on GitHub-hosted runners (see README "CI" section):
 #   - Timings are noisy (shared VMs); use for trend/regression, not absolutes.
@@ -67,10 +65,10 @@ jobs:
 
       - name: Registry login
         run: |
-          echo "${{ secrets.CLIPPER_REGISTRY_PASSWORD }}" \
-            | docker login clipper.dev -u "${{ secrets.CLIPPER_REGISTRY_USERNAME }}" --password-stdin
+          echo "${{ secrets.CLIPPER_CI_CREDENTIALS }}" \
+            | docker login clipper.dev -u token --password-stdin
           echo "${{ secrets.DOCKERHUB_TOKEN }}" \
-            | docker login docker.io -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+            | docker login docker.io -u clipperkyle --password-stdin
 
       - name: Set up builders
         run: ./setup.sh
