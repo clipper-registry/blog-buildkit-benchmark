@@ -8,7 +8,11 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get install -y --no-install-recommends \
         build-essential cmake git ccache ca-certificates
 
-ADD https://github.com/ggml-org/llama.cpp.git#0827b2c1da299805288abbd556d869318f2b121e /src
+# Fetch the pinned commit as a tarball rather than a git ADD: avoids the git
+# source fetching (and logging) every remote tag, and the "Not a valid object
+# name" failure when buildkit's git source can't retrieve a bare commit SHA.
+ADD https://github.com/ggml-org/llama.cpp/archive/0827b2c1da299805288abbd556d869318f2b121e.tar.gz /src.tar.gz
+RUN mkdir -p /src && tar -xzf /src.tar.gz -C /src --strip-components=1 && rm /src.tar.gz
 WORKDIR /src
 
 # CACHE_BUST is injected per-invocation by run-scenario.sh. Appending it to
