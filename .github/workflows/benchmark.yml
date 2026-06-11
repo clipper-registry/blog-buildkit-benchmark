@@ -42,11 +42,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
-      - name: Free disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL
-          docker image prune -af || true
-          df -h /
+      # Likely unneeded on 4-core public runners; re-enable if disk runs short.
+      # - name: Free disk space
+      #   run: |
+      #     sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL
+      #     docker image prune -af || true
+      #     df -h /
 
       - name: Checkout benchmarks
         uses: actions/checkout@v4
