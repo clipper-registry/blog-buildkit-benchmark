@@ -89,6 +89,25 @@ jobs:
       - name: Run scenarios
         run: ./bench.sh
 
+      - name: Lazy FUSE pull stats
+        if: always()
+        run: |
+          # bench-clipper-lazy only runs s4, so its clipper content store after
+          # the run == exactly the bytes the lazy FUSE path fetched on demand.
+          # If FUSE were broken (eager fallback) this would balloon to the whole
+          # decompressed image; lazy pulls only the working set.
+          c=buildx_buildkit_bench-clipper-lazy0
+          store=/var/lib/buildkit/runc-clipper-lazy/snapshots/clipper/content
+          {
+            echo "## Lazy FUSE pull stats (s4)"
+            echo '```'
+            echo "bytes fetched on demand:"
+            docker exec "$c" du -sh "$store" 2>/dev/null || echo "(no clipper content store)"
+            echo "chunks fetched (blob inode count):"
+            docker exec "$c" du -s --inodes "$store/blobs" 2>/dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Report results
         if: always()
         run: |
