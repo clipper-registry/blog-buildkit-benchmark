@@ -109,6 +109,10 @@ jobs:
               # still shows as "version ... not found". Either pins the path.
               cause="$(grep -m1 -E "clipper: storing chunk|unexpected EOF|version .* not found|did not complete successfully" "hammer-logs/s4-run-${i}.log" 2>/dev/null)"
               echo "run $i: FAIL rc=$rc | ${cause}" >> hammer-summary.txt
+              echo "progress: ${pass} pass, ${fail} fail of ${i}"
+              # One failing run with full diagnostics is all we need; stop here.
+              echo "stopping on first failure (run $i)"
+              break
             fi
             echo "progress: ${pass} pass, ${fail} fail of ${i}"
           done
