@@ -104,13 +104,9 @@ jobs:
               echo "run $i: PASS" >> hammer-summary.txt
             else
               fail=$((fail + 1))
-              # First line naming the cause. The back-channel makes a lazy-fetch
-              # failure show as a clipper chunk error; a serving-side corruption
-              # still shows as "version ... not found". Either pins the path.
-              cause="$(grep -m1 -E "clipper: storing chunk|unexpected EOF|version .* not found|did not complete successfully" "hammer-logs/s4-run-${i}.log" 2>/dev/null)"
+              docker logs buildx_buildkit_bench-clipper-lazy0 > "hammer-logs/s4-run-${i}-daemon.log" 2>&1 || true
+              cause="$(grep -m1 -E "clipper: storing chunk|unexpected EOF|version .* not found|symbol lookup|no such job|did not complete successfully" "hammer-logs/s4-run-${i}.log" 2>/dev/null)"
               echo "run $i: FAIL rc=$rc | ${cause}" >> hammer-summary.txt
-              echo "progress: ${pass} pass, ${fail} fail of ${i}"
-              # One failing run with full diagnostics is all we need; stop here.
               echo "stopping on first failure (run $i)"
               break
             fi
