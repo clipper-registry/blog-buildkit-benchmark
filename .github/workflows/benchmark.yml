@@ -98,15 +98,13 @@ jobs:
           # decompressed image; lazy pulls only the working set.
           c=buildx_buildkit_bench-clipper-lazy0
           store=/var/lib/buildkit/runc-clipper-lazy/snapshots/clipper/content
-          {
-            echo "## Lazy FUSE pull stats (s4)"
-            echo '```'
-            echo "bytes fetched on demand:"
-            docker exec "$c" du -sh "$store" 2>/dev/null || echo "(no clipper content store)"
-            echo "chunks fetched (blob inode count):"
-            docker exec "$c" du -s --inodes "$store/blobs" 2>/dev/null || true
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          : > fuse-stats.txt
+          echo "bytes fetched on demand:" >> fuse-stats.txt
+          docker exec "$c" du -sh "$store" >> fuse-stats.txt 2>/dev/null || echo "(no clipper content store)" >> fuse-stats.txt
+          echo "chunks fetched (blob inode count):" >> fuse-stats.txt
+          docker exec "$c" du -s --inodes "$store/blobs" >> fuse-stats.txt 2>/dev/null || true
+          cat fuse-stats.txt
+          { echo "## Lazy FUSE pull stats (s4)"; echo '```'; cat fuse-stats.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Report results
         if: always()
@@ -128,4 +126,5 @@ jobs:
           path: |
             results.txt
             *-build.log
+            fuse-stats.txt
           if-no-files-found: ignore
