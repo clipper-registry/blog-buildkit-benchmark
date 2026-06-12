@@ -1,0 +1,131 @@
+name: s4-hammer
+
+# Runs the s4 (lazy FUSE snapshotter) scenario N times to surface the
+# intermittent chunk-corruption that only shows up on the GHA network. Each
+# iteration recreates bench-clipper-lazy from scratch so the clipper content
+# store starts empty and the run actually fetches its chunks lazily (a warm
+# store would read committed/verified blobs and never hit the streaming path).
+#
+# With the fetch back-channel in the fork, an unrecoverable chunk fetch now fails
+# the build on the real cause (clipper: storing chunk sha256:...: unexpected EOF)
+# instead of a downstream "version not found" -- so a failing run here tells us
+# exactly which path corrupted.
+#
+# Dispatch with buildkit_image set to the fork image under test (the merged
+# commit's ghcr tag) and iterations as desired (default 25). s4 pushes to
+# clipper.dev, so CLIPPER_CI_CREDENTIALS is required.
+
+on:
+  workflow_dispatch:
+    inputs:
+      buildkit_image:
+        description: clipper buildkit image (ghcr, including tag) to hammer
+        default: ghcr.io/clipper-registry/buildkit:8b1cbce10e12581a392828960d8e699de680d16c
+        type: string
+      iterations:
+        description: number of s4 runs
+        default: "25"
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+
+# s4 pushes a fixed bench tag; serialize hammer runs.
+concurrency:
+  group: s4-hammer-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  hammer:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - name: Checkout benchmarks
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to clipper.dev
+        uses: docker/login-action@v3
+        with:
+          registry: clipper.dev
+          username: token
+          password: ${{ secrets.CLIPPER_CI_CREDENTIALS }}
+
+      - name: Pull clipper buildkit image
+        env:
+          BUILDKIT_IMAGE: ${{ inputs.buildkit_image }}
+        run: |
+          docker pull "$BUILDKIT_IMAGE"
+          # run-scenario.sh's builder image is moby/buildkit:local.
+          docker tag "$BUILDKIT_IMAGE" moby/buildkit:local
+
+      - name: Hammer s4
+        env:
+          ITER: ${{ inputs.iterations }}
+        run: |
+          set +e
+          arch="$(dpkg --print-architecture)"
+          cuda="clipper.dev/clipper/cuda:12.9.0-runtime-ubuntu24.04-${arch}"
+          # Match bench.sh: arch-keyed cache so we read the existing s4-<arch> cache.
+          export CACHE_SUFFIX="-${arch}"
+
+          mkdir -p hammer-logs
+          : > hammer-summary.txt
+          pass=0
+          fail=0
+          for i in $(seq 1 "$ITER"); do
+            # Cold builder each run: a fresh container has an empty clipper
+            # content store, so s4 fetches its chunks lazily (the path under test).
+            docker buildx rm bench-clipper-lazy >/dev/null 2>&1
+            docker buildx create --name bench-clipper-lazy --driver docker-container \
+              --driver-opt image=moby/buildkit:local \
+              --buildkitd-flags "--oci-worker-snapshotter=clipper-lazy --allow-insecure-entitlement=network.host" >/dev/null
+            docker buildx inspect bench-clipper-lazy --bootstrap >/dev/null 2>&1
+
+            echo "===== s4 hammer run $i / $ITER ====="
+            ./run-scenario.sh s4 bench-clipper-lazy "$cuda" \
+              clipper.dev/clipper/cuda-bench:s4 clipper clipper.dev/clipper/cuda-bench-cache --mount
+            rc=$?
+
+            cp s4-build.log "hammer-logs/s4-run-${i}.log" 2>/dev/null || true
+            if [ "$rc" -eq 0 ]; then
+              pass=$((pass + 1))
+              echo "run $i: PASS" >> hammer-summary.txt
+            else
+              fail=$((fail + 1))
+              # First line naming the cause. The back-channel makes a lazy-fetch
+              # failure show as a clipper chunk error; a serving-side corruption
+              # still shows as "version ... not found". Either pins the path.
+              cause="$(grep -m1 -E "clipper: storing chunk|unexpected EOF|version .* not found|did not complete successfully" "hammer-logs/s4-run-${i}.log" 2>/dev/null)"
+              echo "run $i: FAIL rc=$rc | ${cause}" >> hammer-summary.txt
+            fi
+            echo "progress: ${pass} pass, ${fail} fail of ${i}"
+          done
+
+          echo "TOTAL: ${pass} pass, ${fail} fail of ${ITER}" >> hammer-summary.txt
+          {
+            echo "## s4 hammer: ${pass} passed, ${fail} failed of ${ITER}"
+            echo '```'
+            cat hammer-summary.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload hammer logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: s4-hammer-logs
+          path: |
+            hammer-summary.txt
+            hammer-logs/
+          if-no-files-found: ignore
