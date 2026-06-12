@@ -89,6 +89,7 @@ jobs:
             docker buildx rm bench-clipper-lazy >/dev/null 2>&1
             docker buildx create --name bench-clipper-lazy --driver docker-container \
               --driver-opt image=moby/buildkit:local \
+              --driver-opt env.CLIPPER_FUSE_LOG=1 \
               --buildkitd-flags "--oci-worker-snapshotter=clipper-lazy --allow-insecure-entitlement=network.host" >/dev/null
             docker buildx inspect bench-clipper-lazy --bootstrap >/dev/null 2>&1
 
