@@ -25,7 +25,7 @@ on:
     inputs:
       buildkit_image:
         description: clipper buildkit image (ghcr, including tag) to benchmark
-        default: ghcr.io/clipper-registry/buildkit:515fd50f940027c77d82e98cb529ca87484babb5
+        default: ghcr.io/clipper-registry/buildkit:3609e1545fe119845f144e5e91c8ec2217745b44
         type: string
 
 permissions:
@@ -77,7 +77,7 @@ jobs:
 
       - name: Pull clipper buildkit image
         env:
-          BUILDKIT_IMAGE: ${{ inputs.buildkit_image || 'ghcr.io/clipper-registry/buildkit:515fd50f940027c77d82e98cb529ca87484babb5' }}
+          BUILDKIT_IMAGE: ${{ inputs.buildkit_image || 'ghcr.io/clipper-registry/buildkit:3609e1545fe119845f144e5e91c8ec2217745b44' }}
         run: |
           docker pull "$BUILDKIT_IMAGE"
           # setup.sh expects the clipper builder image as moby/buildkit:local
@@ -88,6 +88,16 @@ jobs:
 
       - name: Run scenarios
         run: ./bench.sh
+
+      - name: Capture buildkitd daemon logs
+        if: always()
+        run: |
+          # The clipper PHASE markers (solve/exec boundaries) are bklog-timestamped
+          # in the daemon log; capture both builders so eager (s3) and lazy (s4) can
+          # be split into pre-exec / compile / export and compared.
+          for b in bench-clipper-eager bench-clipper-lazy; do
+            docker logs "buildx_buildkit_${b}0" > "${b}-daemon.log" 2>&1 || true
+          done
 
       - name: Lazy FUSE pull stats
         if: always()
@@ -126,5 +136,6 @@ jobs:
           path: |
             results.txt
             *-build.log
+            *-daemon.log
             fuse-stats.txt
           if-no-files-found: ignore
