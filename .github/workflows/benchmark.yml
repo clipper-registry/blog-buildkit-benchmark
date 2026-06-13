@@ -25,7 +25,7 @@ on:
     inputs:
       buildkit_image:
         description: clipper buildkit image (ghcr, including tag) to benchmark
-        default: ghcr.io/clipper-registry/buildkit:ff2f5c13f7890062e2cf6561e9c8948cfa50e9bd
+        default: ghcr.io/clipper-registry/buildkit:f0d9dae257718d4b274eba1a0d064c52a1db2f17
         type: string
 
 permissions:
