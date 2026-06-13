@@ -42,13 +42,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
-      # Likely unneeded on 4-core public runners; re-enable if disk runs short.
-      # - name: Free disk space
-      #   run: |
-      #     sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL
-      #     docker image prune -af || true
-      #     df -h /
-
       - name: Checkout benchmarks
         uses: actions/checkout@v4
 
@@ -95,18 +88,18 @@ jobs:
           # The clipper PHASE markers (solve/exec boundaries) are bklog-timestamped
           # in the daemon log; capture both builders so eager (s3) and lazy (s4) can
           # be split into pre-exec / compile / export and compared.
-          for b in bench-clipper-eager bench-clipper-lazy; do
+          for b in bench-s2 bench-s3 bench-s4; do
             docker logs "buildx_buildkit_${b}0" > "${b}-daemon.log" 2>&1 || true
           done
 
       - name: Lazy FUSE pull stats
         if: always()
         run: |
-          # bench-clipper-lazy only runs s4, so its clipper content store after
-          # the run == exactly the bytes the lazy FUSE path fetched on demand.
+          # bench-s4 only runs s4, so its clipper content store after the run ==
+          # exactly the bytes the lazy FUSE path fetched on demand.
           # If FUSE were broken (eager fallback) this would balloon to the whole
           # decompressed image; lazy pulls only the working set.
-          c=buildx_buildkit_bench-clipper-lazy0
+          c=buildx_buildkit_bench-s40
           store=/var/lib/buildkit/runc-clipper-lazy/snapshots/clipper/content
           : > fuse-stats.txt
           echo "bytes fetched on demand:" >> fuse-stats.txt

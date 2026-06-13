@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# Create the three buildx builders used by bench.sh. Idempotent.
+# Create one buildx builder PER SCENARIO. Scenarios must NOT share a builder:
+# a shared builder lets a later scenario reuse an earlier one's already-pulled
+# and extracted layers (s3 was silently warmed by s2 on the shared eager
+# builder, so s3 never paid the cold pull -- making the eager-vs-lazy comparison
+# meaningless). Separate builders => every scenario runs cold. Idempotent.
 set -euo pipefail
 
 # Upstream buildkit image used for the baseline. Pinned so the comparison is
@@ -27,14 +31,16 @@ create_or_replace() {
     echo "builder $name ready (image=$image, flags='$flags')"
 }
 
-# Scenario 1: stock upstream buildkit, no clipper anything.
-create_or_replace "bench-regular" "$UPSTREAM_IMAGE" \
-    "--allow-insecure-entitlement=network.host"
+EAGER_FLAGS="--allow-insecure-entitlement=network.host"
+LAZY_FLAGS="--oci-worker-snapshotter=clipper-lazy --allow-insecure-entitlement=network.host"
 
-# Scenarios 2-3: clipper-aware, eager applier (default snapshotter path).
-create_or_replace "bench-clipper-eager" "$CLIPPER_IMAGE" \
-    "--allow-insecure-entitlement=network.host"
+# s1: stock upstream buildkit, no clipper anything.
+create_or_replace "bench-s1" "$UPSTREAM_IMAGE" "$EAGER_FLAGS"
 
-# Scenario 4: clipper-aware, lazy FUSE snapshotter.
-create_or_replace "bench-clipper-lazy" "$CLIPPER_IMAGE" \
-    "--oci-worker-snapshotter=clipper-lazy --allow-insecure-entitlement=network.host"
+# s2 + s3: clipper-aware, eager applier (default snapshotter). Separate builders
+# so s3 pulls+extracts the base cold instead of reusing s2's already-extracted one.
+create_or_replace "bench-s2" "$CLIPPER_IMAGE" "$EAGER_FLAGS"
+create_or_replace "bench-s3" "$CLIPPER_IMAGE" "$EAGER_FLAGS"
+
+# s4: clipper-aware, lazy FUSE snapshotter.
+create_or_replace "bench-s4" "$CLIPPER_IMAGE" "$LAZY_FLAGS"
