@@ -25,7 +25,7 @@ on:
     inputs:
       buildkit_image:
         description: clipper buildkit image (ghcr, including tag) to benchmark
-        default: ghcr.io/clipper-registry/buildkit:0cfa7eddcde3e289d0e0aafcc644f38b12e20b39
+        default: ghcr.io/clipper-registry/buildkit:4b0ff8ad27c563fd2d569bcf7568ba3b04b1fef9
         type: string
       scenarios:
         description: space-separated scenarios to run (e.g. "s2 s3 s4" to skip the s1 baseline)
@@ -74,7 +74,7 @@ jobs:
 
       - name: Pull clipper buildkit image
         env:
-          BUILDKIT_IMAGE: ${{ inputs.buildkit_image || 'ghcr.io/clipper-registry/buildkit:0cfa7eddcde3e289d0e0aafcc644f38b12e20b39' }}
+          BUILDKIT_IMAGE: ${{ inputs.buildkit_image || 'ghcr.io/clipper-registry/buildkit:4b0ff8ad27c563fd2d569bcf7568ba3b04b1fef9' }}
         run: |
           docker pull "$BUILDKIT_IMAGE"
           # setup.sh expects the clipper builder image as moby/buildkit:local
