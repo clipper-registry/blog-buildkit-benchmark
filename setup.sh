@@ -31,8 +31,12 @@ create_or_replace() {
     echo "builder $name ready (image=$image, flags='$flags')"
 }
 
-EAGER_FLAGS="--allow-insecure-entitlement=network.host"
-LAZY_FLAGS="--oci-worker-snapshotter=clipper-lazy --allow-insecure-entitlement=network.host"
+# --debug: buildkitd logs at debug level so containerd's docker resolver prints
+# its HTTP requests (the --cache-to push path goes through that resolver, not the
+# clipper registry client, so it's otherwise uninstrumented). Verbose, but this
+# is a diagnostic run hunting the intermittent cache-export stall.
+EAGER_FLAGS="--debug --allow-insecure-entitlement=network.host"
+LAZY_FLAGS="--debug --oci-worker-snapshotter=clipper-lazy --allow-insecure-entitlement=network.host"
 
 # s1: stock upstream buildkit, no clipper anything.
 create_or_replace "bench-s1" "$UPSTREAM_IMAGE" "$EAGER_FLAGS"
