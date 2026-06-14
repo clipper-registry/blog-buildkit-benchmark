@@ -28,9 +28,16 @@ dump() { # $1=container $2=outfile
 }
 
 # run <./run-scenario.sh> <id> <builder> ... : run a scenario in the background
-# with the stall watchdog.
+# with the stall watchdog. Skips the scenario if it's not in $SCENARIOS (a
+# space-separated allowlist; defaults to all). Lets the hang-hunt skip s1
+# (upstream baseline, irrelevant to the clipper paths) while the normal
+# push-triggered benchmark still runs all four.
 run() {
   local id="$2" builder="$3"
+  case " ${SCENARIOS:-s1 s2 s3 s4} " in
+    *" $id "*) ;;
+    *) echo "skipping $id (not in SCENARIOS='${SCENARIOS}')"; return ;;
+  esac
   local ctr="buildx_buildkit_${builder}0"
   "$@" &
   local bpid=$! start=$SECONDS s1=0 s2=0 el

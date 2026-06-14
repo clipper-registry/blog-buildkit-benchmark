@@ -27,6 +27,10 @@ on:
         description: clipper buildkit image (ghcr, including tag) to benchmark
         default: ghcr.io/clipper-registry/buildkit:c177c7c4c9a051c0f560f04a6e2a5f97d2c4caae
         type: string
+      scenarios:
+        description: space-separated scenarios to run (e.g. "s2 s3 s4" to skip the s1 baseline)
+        default: s1 s2 s3 s4
+        type: string
 
 permissions:
   contents: read
@@ -80,6 +84,8 @@ jobs:
         run: ./setup.sh
 
       - name: Run scenarios
+        env:
+          SCENARIOS: ${{ inputs.scenarios || 's1 s2 s3 s4' }}
         run: ./bench.sh
 
       - name: Capture buildkitd daemon logs
