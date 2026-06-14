@@ -131,4 +131,5 @@ jobs:
             *-build.log
             *-daemon.log
             fuse-stats.txt
+            hang-dumps/
           if-no-files-found: ignore
