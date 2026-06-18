@@ -38,13 +38,19 @@ create_or_replace() {
 EAGER_FLAGS="--debug --allow-insecure-entitlement=network.host"
 LAZY_FLAGS="--debug --oci-worker-snapshotter=clipper-lazy --allow-insecure-entitlement=network.host"
 
+# Create only the builder(s) needed. With no argument (or "all") create all four
+# -- this is the local path: `./setup.sh && ./bench.sh` runs every scenario
+# sequentially on one machine. Pass a scenario id (s1..s4) to create just that
+# one, which is what the CI workflow does (one scenario per runner).
+want="${1:-all}"
+
 # s1: stock upstream buildkit, no clipper anything.
-create_or_replace "bench-s1" "$UPSTREAM_IMAGE" "$EAGER_FLAGS"
+case "$want" in s1|all) create_or_replace "bench-s1" "$UPSTREAM_IMAGE" "$EAGER_FLAGS" ;; esac
 
 # s2 + s3: clipper-aware, eager applier (default snapshotter). Separate builders
 # so s3 pulls+extracts the base cold instead of reusing s2's already-extracted one.
-create_or_replace "bench-s2" "$CLIPPER_IMAGE" "$EAGER_FLAGS"
-create_or_replace "bench-s3" "$CLIPPER_IMAGE" "$EAGER_FLAGS"
+case "$want" in s2|all) create_or_replace "bench-s2" "$CLIPPER_IMAGE" "$EAGER_FLAGS" ;; esac
+case "$want" in s3|all) create_or_replace "bench-s3" "$CLIPPER_IMAGE" "$EAGER_FLAGS" ;; esac
 
 # s4: clipper-aware, lazy FUSE snapshotter.
-create_or_replace "bench-s4" "$CLIPPER_IMAGE" "$LAZY_FLAGS"
+case "$want" in s4|all) create_or_replace "bench-s4" "$CLIPPER_IMAGE" "$LAZY_FLAGS" ;; esac
