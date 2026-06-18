@@ -49,10 +49,19 @@ fi
 
 printf '\n=== %s ===\n' "$id" | tee -a results.txt
 
-# Prune local builder cache so the timed build reflects only what
-# cache-from can pull back from the registry, not whatever happened to be
-# sitting in the builder from a prior invocation.
-docker buildx prune -af --builder "$builder" >/dev/null
+# Prune the builder cache so the timed build reflects only what cache-from can
+# pull back from the registry, not whatever was left in the builder by a prior
+# invocation. This only matters locally, where `./setup.sh && ./bench.sh` runs
+# every scenario sequentially against persistent builders.
+#
+# Skip it entirely in GitHub Actions: each scenario runs on its own fresh runner
+# with a freshly-created builder (nothing to prune), and a `prune -af` would wipe
+# any cache restored just before the build -- notably s1-dance's RUN cache mounts,
+# which buildkit-cache-dance injects locally (upstream can't restore one from a
+# registry). CACHE_BUST keeps the compile layer cold regardless.
+if [ -z "${GITHUB_ACTIONS:-}" ]; then
+    docker buildx prune -af --builder "$builder" >/dev/null
+fi
 
 start=$SECONDS
 if docker buildx build --builder "$builder" \

@@ -35,8 +35,8 @@ create_or_replace() {
 # its HTTP requests (the --cache-to push path goes through that resolver, not the
 # clipper registry client, so it's otherwise uninstrumented). Verbose, but this
 # is a diagnostic run hunting the intermittent cache-export stall.
-EAGER_FLAGS="--debug --allow-insecure-entitlement=network.host"
-LAZY_FLAGS="--debug --oci-worker-snapshotter=clipper-lazy --allow-insecure-entitlement=network.host"
+EAGER_FLAGS="--debug"
+LAZY_FLAGS="--debug --oci-worker-snapshotter=clipper-lazy"
 
 # Create only the builder(s) needed. With no argument (or "all") create all four
 # -- this is the local path: `./setup.sh && ./bench.sh` runs every scenario
