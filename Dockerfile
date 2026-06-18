@@ -20,6 +20,8 @@ WORKDIR /src
 # Builds llama.cpp's CUDA backend (-DGGML_CUDA=ON); BASE_IMAGE must be a CUDA
 # -devel image (provides nvcc + cuBLAS dev headers).
 ARG CACHE_BUST
+ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64/stubs/
+RUN ln -s /usr/local/cuda/lib64/stubs/libcuda.so /usr/local/cuda/lib64/stubs/libcuda.so.1
 RUN --mount=type=cache,target=/root/.cache/ccache \
     echo "// bench-mutation ${CACHE_BUST}" >> src/llama.cpp && \
     cmake -B build \
