@@ -50,16 +50,34 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  prep:
+    # Expand the (optional) space-separated `scenarios` allowlist into a JSON
+    # array for the matrix below. Defaults to all four (e.g. on push). The
+    # matrix context isn't available in a job-level `if`, so filtering is done
+    # here instead.
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.set.outputs.matrix }}
+    steps:
+      - id: set
+        env:
+          SCENARIOS: ${{ inputs.scenarios || 's1 s2 s3 s4' }}
+        run: |
+          arr=""
+          for s in $SCENARIOS; do
+            arr="$arr\"$s\","
+          done
+          echo "matrix=[${arr%,}]" >> "$GITHUB_OUTPUT"
+
   scenario:
-    # Honor an optional `scenarios` allowlist on manual runs; run all four on push.
-    if: ${{ contains(format(' {0} ', inputs.scenarios || 's1 s2 s3 s4'), format(' {0} ', matrix.scenario)) }}
+    needs: prep
     name: ${{ matrix.scenario }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        scenario: [s1, s2, s3, s4]
+        scenario: ${{ fromJSON(needs.prep.outputs.matrix) }}
     steps:
       - name: Checkout benchmarks
         uses: actions/checkout@v4
