@@ -47,6 +47,11 @@ want="${1:-all}"
 # s1: stock upstream buildkit, no clipper anything.
 case "$want" in s1|all) create_or_replace "bench-s1" "$UPSTREAM_IMAGE" "$EAGER_FLAGS" ;; esac
 
+# s1-dance: same stock upstream buildkit as s1; the difference is purely that CI
+# warms its RUN cache mounts with buildkit-cache-dance (the upstream way to
+# persist a cache mount, since upstream can't restore one from a registry).
+case "$want" in s1-dance|all) create_or_replace "bench-s1-dance" "$UPSTREAM_IMAGE" "$EAGER_FLAGS" ;; esac
+
 # s2 + s3: clipper-aware, eager applier (default snapshotter). Separate builders
 # so s3 pulls+extracts the base cold instead of reusing s2's already-extracted one.
 case "$want" in s2|all) create_or_replace "bench-s2" "$CLIPPER_IMAGE" "$EAGER_FLAGS" ;; esac

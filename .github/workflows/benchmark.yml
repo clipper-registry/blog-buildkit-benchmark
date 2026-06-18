@@ -36,12 +36,13 @@ on:
         type: string
       scenarios:
         description: space-separated scenarios to run (e.g. "s2 s3 s4" to skip the s1 baseline)
-        default: s1 s2 s3 s4
+        default: s1 s1-dance s2 s3 s4
         type: string
 
 permissions:
   contents: read
   packages: read
+  actions: read   # summarize reads the s1-dance job's step timings (cache-dance overhead)
 
 # Scenarios push fixed bench tags to the real registries; cancel a superseded
 # run for this ref rather than let two overlap.
@@ -61,7 +62,7 @@ jobs:
     steps:
       - id: set
         env:
-          SCENARIOS: ${{ inputs.scenarios || 's1 s2 s3 s4' }}
+          SCENARIOS: ${{ inputs.scenarios || 's1 s1-dance s2 s3 s4' }}
         run: |
           arr=""
           for s in $SCENARIOS; do
@@ -116,6 +117,29 @@ jobs:
       - name: Set up builder
         run: ./setup.sh ${{ matrix.scenario }}
 
+      # s1-dance is the upstream-with-cache-dance scenario: upstream buildkit
+      # can't restore a RUN cache mount from a registry the way clipper's
+      # cache-mount does, so the realistic upstream alternative is
+      # buildkit-cache-dance + actions/cache. This warms s1-dance's cache mounts
+      # so we compare clipper's native cache-mount (s3/s4) against upstream's best
+      # option (s1-dance) and against a cold upstream build (s1). Only s1-dance
+      # does the dance; its restore/save time is added back in the summary.
+      - name: Restore s1-dance cache mounts (cache-dance)
+        if: matrix.scenario == 's1-dance'
+        uses: actions/cache@v4
+        id: s1dancecache
+        with:
+          path: s1-dance-cache-mounts
+          key: s1-dance-cache-mounts-${{ hashFiles('Dockerfile') }}
+      - name: Inject s1-dance cache mounts into builder (cache-dance)
+        if: matrix.scenario == 's1-dance'
+        uses: reproducible-containers/buildkit-cache-dance@v3
+        with:
+          builder: bench-s1-dance
+          cache-dir: s1-dance-cache-mounts
+          dockerfile: Dockerfile
+          skip-extraction: ${{ steps.s1dancecache.outputs.cache-hit }}
+
       - name: Run scenario
         env:
           SCENARIOS: ${{ matrix.scenario }}
@@ -168,15 +192,42 @@ jobs:
           path: artifacts
 
       - name: Summarize results
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
+          # s1-dance runs its cache restore/save in out-of-band workflow steps
+          # (actions/cache + buildkit-cache-dance inject/extract), whereas clipper
+          # does both inside the timed build. Sum the wall-clock of every
+          # cache-dance step (main inject/restore + their Post extract/save) in
+          # the s1-dance job so we can report an honest total.
+          dance=$(gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs" --paginate \
+            --jq '[.jobs[] | select(.name=="s1-dance") | .steps[]
+                   | select((.name | test("cache-dance")) and .started_at != null and .completed_at != null)
+                   | ((.completed_at | fromdateiso8601) - (.started_at | fromdateiso8601))] | add // 0' \
+            2>/dev/null || echo 0)
+          case "$dance" in (*[!0-9]*|"") dance=0 ;; esac
           {
             echo "## Benchmark results"
-            echo '| scenario | exit | seconds |'
+            echo '| scenario | exit | build (s) |'
             echo '| --- | --- | --- |'
             grep -h '^RESULT' artifacts/*/results.txt 2>/dev/null \
               | sort \
               | sed -E 's/RESULT label=("?)([^" ]+)\1 exit=([0-9]+) seconds=([0-9]+)/| \2 | \3 | \4 |/' \
               || echo '| (no results) | | |'
+            if [ "$dance" -gt 0 ]; then
+              build=$(grep -h '^RESULT' artifacts/results-s1-dance/results.txt 2>/dev/null \
+                | sed -E 's/.*seconds=([0-9]+).*/\1/')
+              case "$build" in (*[!0-9]*|"") build=0 ;; esac
+              echo
+              echo "## s1-dance honest total (build + cache-dance)"
+              echo "Clipper restores/saves its cache inside the timed build; buildkit-cache-dance does it in separate steps, so they're added back here:"
+              echo
+              echo '| phase | seconds |'
+              echo '| --- | --- |'
+              echo "| build (timed) | ${build} |"
+              echo "| cache-dance (restore + inject + extract + save) | ${dance} |"
+              echo "| **honest total** | **$((build + dance))** |"
+            fi
             if [ -f artifacts/results-s4/fuse-stats.txt ]; then
               echo
               echo "## Lazy FUSE pull stats (s4)"
