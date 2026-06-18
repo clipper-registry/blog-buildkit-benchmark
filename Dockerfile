@@ -38,14 +38,20 @@ WORKDIR /src
 # Builds llama.cpp's CUDA backend (-DGGML_CUDA=ON); BASE_IMAGE must be a CUDA
 # -devel image (provides nvcc + cuBLAS dev headers).
 #
-# CCACHE_LOGFILE captures a per-compilation trace (lightweight, single append-
-# only file) so the "missed translation units" listing below can show exactly
-# which files did not hit the cache, alongside the verbose stats breakdown.
+# Per-build ccache diagnostics, both written OUTSIDE the cache dir (in /tmp, so
+# they're fresh each build and aren't carried in the exported cache-mount):
+#   CCACHE_STATSLOG -> per-invocation stats, summarized by `--show-log-stats`,
+#     giving THIS build's hit/miss counts (vs `--show-stats`, which reports the
+#     cache's cumulative lifetime counters from the mount and is misleading here).
+#   CCACHE_LOGFILE  -> per-compilation trace, parsed below to list which TUs
+#     missed this build.
+# In-cache stats are left enabled (CCACHE_NOSTATS would also disable ccache's
+# automatic size-based cleanup, letting the 5 GiB cache-mount grow unbounded).
 ARG CACHE_BUST
 ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64/stubs/
 RUN ln -s /usr/local/cuda/lib64/stubs/libcuda.so /usr/local/cuda/lib64/stubs/libcuda.so.1
 RUN --mount=type=cache,target=/root/.cache/ccache \
-    export CCACHE_LOGFILE=/tmp/ccache.log && \
+    export CCACHE_LOGFILE=/tmp/ccache.log CCACHE_STATSLOG=/tmp/ccache.statslog && \
     echo "// bench-mutation ${CACHE_BUST}" >> src/llama.cpp && \
     cmake -B build \
         -DGGML_CUDA=ON \
@@ -53,7 +59,8 @@ RUN --mount=type=cache,target=/root/.cache/ccache \
         -DCMAKE_C_COMPILER_LAUNCHER=ccache \
         -DCMAKE_CXX_COMPILER_LAUNCHER=ccache && \
     cmake --build build -j"$(nproc)" --target llama-cli && \
-    ccache --version && \
-    ccache --show-stats --verbose && \
-    echo "=== missed translation units (command line per ccache miss) ===" && \
-    awk '{p=$2} /Command line:/{sub(/^.*Command line: /,"");cmd[p]=$0} /Result:.*miss/{print cmd[p]}' /tmp/ccache.log 2>/dev/null | sort | uniq -c | sort -rn || true
+    { ccache --version; \
+      echo "=== ccache stats (this build) ==="; ccache --show-log-stats; \
+      echo "=== missed translation units this build ==="; \
+      awk '{p=$2} /Command line:/{sub(/^.*Command line: /,"");cmd[p]=$0} /Result:.*miss/{print cmd[p]}' /tmp/ccache.log 2>/dev/null | sort | uniq -c | sort -rn; \
+      rm -f /tmp/ccache.log /tmp/ccache.statslog; } || true
