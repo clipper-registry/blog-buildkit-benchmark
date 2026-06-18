@@ -16,10 +16,15 @@ WORKDIR /src
 # invocation so layer cache misses and the compile re-runs, and (b) the one
 # changed TU misses ccache while every other TU hits, exercising the
 # cache-mount transfer realistically.
+#
+# Builds llama.cpp's CUDA backend (-DGGML_CUDA=ON); BASE_IMAGE must be a CUDA
+# -devel image (provides nvcc + cuBLAS dev headers).
 ARG CACHE_BUST
 RUN --mount=type=cache,target=/root/.cache/ccache \
     echo "// bench-mutation ${CACHE_BUST}" >> src/llama.cpp && \
     cmake -B build \
+        -DGGML_CUDA=ON \
+        -DCMAKE_CUDA_COMPILER_LAUNCHER=ccache \
         -DCMAKE_C_COMPILER_LAUNCHER=ccache \
         -DCMAKE_CXX_COMPILER_LAUNCHER=ccache && \
     cmake --build build -j"$(nproc)" --target llama-cli
