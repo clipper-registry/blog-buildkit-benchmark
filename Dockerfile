@@ -18,6 +18,7 @@ WORKDIR /src
 # cache-mount transfer realistically.
 ARG CACHE_BUST
 RUN --mount=type=cache,target=/root/.cache/ccache \
+    ls /root/.cache/ccache && \
     echo "// bench-mutation ${CACHE_BUST}" >> src/llama.cpp && \
     cmake -B build \
         -DCMAKE_C_COMPILER_LAUNCHER=ccache \
