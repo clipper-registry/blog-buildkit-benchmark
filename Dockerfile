@@ -23,11 +23,11 @@ ARG CACHE_BUST
 ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64/stubs/
 RUN ln -s /usr/local/cuda/lib64/stubs/libcuda.so /usr/local/cuda/lib64/stubs/libcuda.so.1
 RUN --mount=type=cache,target=/root/.cache/ccache \
-    ls /root/.cache/ccache && \
     echo "// bench-mutation ${CACHE_BUST}" >> src/llama.cpp && \
     cmake -B build \
         -DGGML_CUDA=ON \
         -DCMAKE_CUDA_COMPILER_LAUNCHER=ccache \
         -DCMAKE_C_COMPILER_LAUNCHER=ccache \
         -DCMAKE_CXX_COMPILER_LAUNCHER=ccache && \
-    cmake --build build -j"$(nproc)" --target llama-cli
+    cmake --build build -j"$(nproc)" --target llama-cli && \
+    ccache --show-stats
