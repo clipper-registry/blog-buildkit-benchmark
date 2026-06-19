@@ -18,10 +18,10 @@ rc_any=0
 # run <./run-scenario.sh> <id> <builder> ... : run a scenario in the background
 # under a hard-timeout watchdog. Skips the scenario if it's not in $SCENARIOS (a
 # space-separated allowlist; defaults to all), letting a run target a subset
-# (e.g. "s2 s3 s4" to skip the s1 baseline).
+# (e.g. "clipper-registry-cache clipper-cache-mount clipper-lazy-fuse" to skip the upstream baselines).
 run() {
   local id="$2"
-  case " ${SCENARIOS:-s1 s1-dance s2 s3 s4} " in
+  case " ${SCENARIOS:-upstream-baseline upstream-cachedance clipper-registry-cache clipper-cache-mount clipper-lazy-fuse} " in
     *" $id "*) ;;
     *) echo "skipping $id (not in SCENARIOS='${SCENARIOS}')"; return ;;
   esac
@@ -41,17 +41,17 @@ run() {
 # One builder per scenario (see setup.sh) so each runs cold -- no scenario
 # reuses another's pulled/extracted layers.
 #
-# s1       = upstream buildkit, cold baseline.
-# s1-dance = upstream buildkit warmed by buildkit-cache-dance -- the dance
-#            (inject/extract of the RUN cache mounts via actions/cache) runs in
-#            the CI workflow around this; here it's just the same upstream build.
+# upstream-baseline      = upstream buildkit, cold baseline.
+# upstream-cachedance    = upstream buildkit warmed by buildkit-cache-dance -- the
+#            dance (inject/extract of the RUN cache mounts via actions/cache) runs
+#            in the CI workflow around this; here it's just the same upstream build.
 #            The fair "what upstream CAN do" comparison vs clipper's cache-mount.
-# s2-s4    = clipper (s3/s4 use clipper's registry-backed cache-mount).
-run ./run-scenario.sh s1       bench-s1       nvidia/cuda:12.9.0-devel-ubuntu24.04 docker.io/clipperregistry/cuda-llamacpp-bench:s1       image   docker.io/clipperregistry/cuda-llamacpp-bench-cache
-run ./run-scenario.sh s1-dance bench-s1-dance nvidia/cuda:12.9.0-devel-ubuntu24.04 docker.io/clipperregistry/cuda-llamacpp-bench:s1-dance image   docker.io/clipperregistry/cuda-llamacpp-bench-cache
-run ./run-scenario.sh s2 bench-s2 "$cuda"                               clipper.dev/clipper/cuda-llamacpp-bench:s2       clipper clipper.dev/clipper/cuda-llamacpp-bench-cache
-run ./run-scenario.sh s3 bench-s3 "$cuda"                               clipper.dev/clipper/cuda-llamacpp-bench:s3       clipper clipper.dev/clipper/cuda-llamacpp-bench-cache --mount
-run ./run-scenario.sh s4 bench-s4 "$cuda"                               clipper.dev/clipper/cuda-llamacpp-bench:s4       clipper clipper.dev/clipper/cuda-llamacpp-bench-cache --mount
+# clipper-*               = clipper (registry-cache, then cache-mount, then lazy-fuse).
+run ./run-scenario.sh upstream-baseline   bench-upstream-baseline   nvidia/cuda:12.9.0-devel-ubuntu24.04 docker.io/clipperregistry/cuda-llamacpp-bench:upstream-baseline   image   docker.io/clipperregistry/cuda-llamacpp-bench-cache
+run ./run-scenario.sh upstream-cachedance bench-upstream-cachedance nvidia/cuda:12.9.0-devel-ubuntu24.04 docker.io/clipperregistry/cuda-llamacpp-bench:upstream-cachedance image   docker.io/clipperregistry/cuda-llamacpp-bench-cache
+run ./run-scenario.sh clipper-registry-cache bench-clipper-registry-cache "$cuda"                         clipper.dev/clipper/cuda-llamacpp-bench:clipper-registry-cache clipper clipper.dev/clipper/cuda-llamacpp-bench-cache
+run ./run-scenario.sh clipper-cache-mount    bench-clipper-cache-mount    "$cuda"                         clipper.dev/clipper/cuda-llamacpp-bench:clipper-cache-mount    clipper clipper.dev/clipper/cuda-llamacpp-bench-cache --mount
+run ./run-scenario.sh clipper-lazy-fuse      bench-clipper-lazy-fuse      "$cuda"                         clipper.dev/clipper/cuda-llamacpp-bench:clipper-lazy-fuse      clipper clipper.dev/clipper/cuda-llamacpp-bench-cache --mount
 
 echo
 echo "=== RESULTS ==="

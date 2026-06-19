@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Create one buildx builder PER SCENARIO. Scenarios must NOT share a builder:
 # a shared builder lets a later scenario reuse an earlier one's already-pulled
-# and extracted layers (s3 was silently warmed by s2 on the shared eager
-# builder, so s3 never paid the cold pull -- making the eager-vs-lazy comparison
-# meaningless). Separate builders => every scenario runs cold. Idempotent.
+# and extracted layers (clipper-cache-mount was silently warmed by
+# clipper-registry-cache on the shared eager builder, so it never paid the cold
+# pull -- making the eager-vs-lazy comparison meaningless). Separate builders =>
+# every scenario runs cold. Idempotent.
 set -euo pipefail
 
 # Upstream buildkit image used for the baseline. Pinned so the comparison is
@@ -40,22 +41,24 @@ LAZY_FLAGS="--debug --oci-worker-snapshotter=clipper-lazy"
 
 # Create only the builder(s) needed. With no argument (or "all") create all four
 # -- this is the local path: `./setup.sh && ./bench.sh` runs every scenario
-# sequentially on one machine. Pass a scenario id (s1..s4) to create just that
-# one, which is what the CI workflow does (one scenario per runner).
+# sequentially on one machine. Pass a scenario id (e.g. clipper-lazy-fuse) to
+# create just that one, which is what the CI workflow does (one scenario per runner).
 want="${1:-all}"
 
-# s1: stock upstream buildkit, no clipper anything.
-case "$want" in s1|all) create_or_replace "bench-s1" "$UPSTREAM_IMAGE" "$EAGER_FLAGS" ;; esac
+# upstream-baseline: stock upstream buildkit, no clipper anything.
+case "$want" in upstream-baseline|all) create_or_replace "bench-upstream-baseline" "$UPSTREAM_IMAGE" "$EAGER_FLAGS" ;; esac
 
-# s1-dance: same stock upstream buildkit as s1; the difference is purely that CI
-# warms its RUN cache mounts with buildkit-cache-dance (the upstream way to
-# persist a cache mount, since upstream can't restore one from a registry).
-case "$want" in s1-dance|all) create_or_replace "bench-s1-dance" "$UPSTREAM_IMAGE" "$EAGER_FLAGS" ;; esac
+# upstream-cachedance: same stock upstream buildkit as upstream-baseline; the
+# difference is purely that CI warms its RUN cache mounts with buildkit-cache-dance
+# (the upstream way to persist a cache mount, since upstream can't restore one from
+# a registry).
+case "$want" in upstream-cachedance|all) create_or_replace "bench-upstream-cachedance" "$UPSTREAM_IMAGE" "$EAGER_FLAGS" ;; esac
 
-# s2 + s3: clipper-aware, eager applier (default snapshotter). Separate builders
-# so s3 pulls+extracts the base cold instead of reusing s2's already-extracted one.
-case "$want" in s2|all) create_or_replace "bench-s2" "$CLIPPER_IMAGE" "$EAGER_FLAGS" ;; esac
-case "$want" in s3|all) create_or_replace "bench-s3" "$CLIPPER_IMAGE" "$EAGER_FLAGS" ;; esac
+# clipper-registry-cache + clipper-cache-mount: clipper-aware, eager applier
+# (default snapshotter). Separate builders so clipper-cache-mount pulls+extracts
+# the base cold instead of reusing clipper-registry-cache's already-extracted one.
+case "$want" in clipper-registry-cache|all) create_or_replace "bench-clipper-registry-cache" "$CLIPPER_IMAGE" "$EAGER_FLAGS" ;; esac
+case "$want" in clipper-cache-mount|all) create_or_replace "bench-clipper-cache-mount" "$CLIPPER_IMAGE" "$EAGER_FLAGS" ;; esac
 
-# s4: clipper-aware, lazy FUSE snapshotter.
-case "$want" in s4|all) create_or_replace "bench-s4" "$CLIPPER_IMAGE" "$LAZY_FLAGS" ;; esac
+# clipper-lazy-fuse: clipper-aware, lazy FUSE snapshotter.
+case "$want" in clipper-lazy-fuse|all) create_or_replace "bench-clipper-lazy-fuse" "$CLIPPER_IMAGE" "$LAZY_FLAGS" ;; esac

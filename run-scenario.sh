@@ -56,7 +56,7 @@ printf '\n=== %s ===\n' "$id" | tee -a results.txt
 #
 # Skip it entirely in GitHub Actions: each scenario runs on its own fresh runner
 # with a freshly-created builder (nothing to prune), and a `prune -af` would wipe
-# any cache restored just before the build -- notably s1-dance's RUN cache mounts,
+# any cache restored just before the build -- notably upstream-cachedance's RUN cache mounts,
 # which buildkit-cache-dance injects locally (upstream can't restore one from a
 # registry). CACHE_BUST keeps the compile layer cold regardless.
 if [ -z "${GITHUB_ACTIONS:-}" ]; then
