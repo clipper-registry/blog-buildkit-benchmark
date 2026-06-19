@@ -8,7 +8,7 @@
 : >results.txt
 
 arch="$(dpkg --print-architecture)"
-cuda="clipper.dev/clipper/cuda:12.9.0-runtime-ubuntu24.04-${arch}"
+cuda="clipper.dev/clipper/cuda:12.9.0-devel-ubuntu24.04-${arch}"
 export CACHE_SUFFIX="-${arch}"
 
 GIVEUP=600    # hard cap per scenario
@@ -21,7 +21,7 @@ rc_any=0
 # (e.g. "s2 s3 s4" to skip the s1 baseline).
 run() {
   local id="$2"
-  case " ${SCENARIOS:-s1 s2 s3 s4} " in
+  case " ${SCENARIOS:-s1 s1-dance s2 s3 s4} " in
     *" $id "*) ;;
     *) echo "skipping $id (not in SCENARIOS='${SCENARIOS}')"; return ;;
   esac
@@ -40,10 +40,18 @@ run() {
 
 # One builder per scenario (see setup.sh) so each runs cold -- no scenario
 # reuses another's pulled/extracted layers.
-run ./run-scenario.sh s1 bench-s1 nvidia/cuda:12.9.0-runtime-ubuntu24.04 docker.io/clipperregistry/cuda-bench:s1 image   docker.io/clipperregistry/cuda-bench-cache
-run ./run-scenario.sh s2 bench-s2 "$cuda"                                 clipper.dev/clipper/cuda-bench:s2       clipper clipper.dev/clipper/cuda-bench-cache
-run ./run-scenario.sh s3 bench-s3 "$cuda"                                 clipper.dev/clipper/cuda-bench:s3       clipper clipper.dev/clipper/cuda-bench-cache --mount
-run ./run-scenario.sh s4 bench-s4 "$cuda"                                 clipper.dev/clipper/cuda-bench:s4       clipper clipper.dev/clipper/cuda-bench-cache --mount
+#
+# s1       = upstream buildkit, cold baseline.
+# s1-dance = upstream buildkit warmed by buildkit-cache-dance -- the dance
+#            (inject/extract of the RUN cache mounts via actions/cache) runs in
+#            the CI workflow around this; here it's just the same upstream build.
+#            The fair "what upstream CAN do" comparison vs clipper's cache-mount.
+# s2-s4    = clipper (s3/s4 use clipper's registry-backed cache-mount).
+run ./run-scenario.sh s1       bench-s1       nvidia/cuda:12.9.0-devel-ubuntu24.04 docker.io/clipperregistry/cuda-llamacpp-bench:s1       image   docker.io/clipperregistry/cuda-llamacpp-bench-cache
+run ./run-scenario.sh s1-dance bench-s1-dance nvidia/cuda:12.9.0-devel-ubuntu24.04 docker.io/clipperregistry/cuda-llamacpp-bench:s1-dance image   docker.io/clipperregistry/cuda-llamacpp-bench-cache
+run ./run-scenario.sh s2 bench-s2 "$cuda"                               clipper.dev/clipper/cuda-llamacpp-bench:s2       clipper clipper.dev/clipper/cuda-llamacpp-bench-cache
+run ./run-scenario.sh s3 bench-s3 "$cuda"                               clipper.dev/clipper/cuda-llamacpp-bench:s3       clipper clipper.dev/clipper/cuda-llamacpp-bench-cache --mount
+run ./run-scenario.sh s4 bench-s4 "$cuda"                               clipper.dev/clipper/cuda-llamacpp-bench:s4       clipper clipper.dev/clipper/cuda-llamacpp-bench-cache --mount
 
 echo
 echo "=== RESULTS ==="
