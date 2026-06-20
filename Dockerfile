@@ -1,8 +1,6 @@
 ARG BASE_IMAGE
 
-# Build stage: compile llama.cpp. This is the work the benchmark times, and the
-# ccache cache mount lives here. The final stage below mounts this stage's build
-# output and installs just the binary.
+# Build stage: the timed compile; the ccache mount lives here.
 FROM ${BASE_IMAGE} AS build
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
@@ -73,10 +71,8 @@ RUN --mount=type=cache,target=/root/.cache/ccache \
 # binary, so the exported image is a slim runtime rather than the full build
 # environment. The compile (and its ccache cache mount) stay in the build stage.
 FROM ${BASE_IMAGE}
-# Mount the build stage's build tree at its original /src/build path (so the
-# generated cmake install rules' absolute paths resolve) and its cmake, then
-# run cmake --install. Using the build stage's cmake keeps this stage free of
-# the build toolchain.
+# /src/build kept at its original path so the install rules' baked paths resolve;
+# /buildusr provides cmake (not in this stage).
 RUN --mount=type=bind,from=build,source=/src/build,target=/src/build \
     --mount=type=bind,from=build,source=/usr,target=/buildusr \
     /buildusr/bin/cmake --install /src/build --prefix /usr/local

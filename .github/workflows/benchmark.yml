@@ -154,13 +154,8 @@ jobs:
         id: s1dancecache
         with:
           path: upstream-cachedance-cache-mounts
-          # Unique key per run so the save always happens; restore-keys falls back
-          # to the most recent cache. A static key (e.g. hashFiles(Dockerfile))
-          # would hit every run, making actions/cache skip the save and (via
-          # skip-extraction below) skip pulling the freshly CACHE_BUST-mutated
-          # ccache out of the builder -- so the dance export read as 0s and the
-          # cache never updated. We want it to restore + re-extract + save every
-          # run, the real recurring cost clipper pays in-build.
+          # Per-run key (restore-keys for fallback) so save + extraction run every
+          # build. A static key hits and skips both, reading export as 0s.
           key: upstream-cachedance-cache-mounts-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             upstream-cachedance-cache-mounts-
@@ -171,8 +166,6 @@ jobs:
           builder: bench-upstream-cachedance
           cache-dir: upstream-cachedance-cache-mounts
           dockerfile: Dockerfile
-          # Always extract (default); the per-run key means there's new ccache to
-          # capture and save every build.
           skip-extraction: false
 
       - name: Run scenario
