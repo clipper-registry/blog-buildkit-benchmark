@@ -1,6 +1,7 @@
 ARG BASE_IMAGE
+ARG RUNTIME_BASE
 
-# Build stage: the timed compile; the ccache mount lives here.
+# Build stage (devel base): the timed compile; the ccache mount lives here.
 FROM ${BASE_IMAGE} AS build
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
@@ -67,12 +68,9 @@ RUN --mount=type=cache,target=/root/.cache/ccache \
       awk '{p=$2} /Command line:/{sub(/^.*Command line: /,"");cmd[p]=$0} /Result:.*miss/{print cmd[p]}' /tmp/ccache.log 2>/dev/null | sort | uniq -c | sort -rn; \
       rm -f /tmp/ccache.log /tmp/ccache.statslog; } || true
 
-# Final stage: mount the build stage's output and install just the compiled
-# binary, so the exported image is a slim runtime rather than the full build
-# environment. The compile (and its ccache cache mount) stay in the build stage.
-FROM ${BASE_IMAGE}
-# /src/build kept at its original path so the install rules' baked paths resolve;
-# /buildusr provides cmake (not in this stage).
-RUN --mount=type=bind,from=build,source=/src/build,target=/src/build \
-    --mount=type=bind,from=build,source=/usr,target=/buildusr \
-    /buildusr/bin/cmake --install /src/build --prefix /usr/local
+# Install here: the devel stage has cmake and its libs; the runtime stage copies.
+RUN cmake --install build --prefix /opt/llama
+
+# Runtime stage (runtime base): just the installed artifacts.
+FROM ${RUNTIME_BASE}
+COPY --from=build /opt/llama /usr/local

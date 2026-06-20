@@ -23,6 +23,9 @@ output="$5"
 cache_repo="$6"
 mount_flag="${7:-}"
 
+# Runtime base for the final stage: the devel base with -devel- -> -runtime-.
+runtime_base="${base/-devel-/-runtime-}"
+
 # Capture this scenario's full stdout+stderr to a per-scenario log while still
 # streaming live to the terminal. The redirect is applied to the script's own
 # file descriptors via exec, so the build command below stays bare (no pipe or
@@ -66,6 +69,7 @@ fi
 start=$SECONDS
 if docker buildx build --builder "$builder" \
         --build-arg "BASE_IMAGE=${base}" \
+        --build-arg "RUNTIME_BASE=${runtime_base}" \
         --build-arg "CACHE_BUST=$(date +%s%N)" \
         --output "type=${output},name=${target},push=true" \
         "${cache[@]}" \
