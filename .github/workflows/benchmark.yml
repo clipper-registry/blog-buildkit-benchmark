@@ -166,7 +166,6 @@ jobs:
           builder: bench-upstream-cachedance
           cache-dir: upstream-cachedance-cache-mounts
           dockerfile: Dockerfile
-          skip-extraction: false
 
       - name: Run scenario
         env:
