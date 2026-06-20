@@ -1,7 +1,9 @@
 [project]
 name = "ml-bench"
 version = "0"
-requires-python = ">=3.12"
+# 3.12 only: torch 2.5.1 has no wheels for newer Pythons; the base's apt python3
+# is 3.12.
+requires-python = ">=3.12,<3.13"
 dependencies = [
     "torch==2.5.1",
     "transformers==4.46.3",
