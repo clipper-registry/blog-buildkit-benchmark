@@ -9,7 +9,7 @@ llama.cpp on a CUDA base image with ccache.
 |--------------------------|---------------------------------------|----------------------------|-------------|-----------------------------------|
 | `upstream-baseline`      | stock upstream buildkit               | `nvidia/cuda` (dockerhub)  | dockerhub   | no                                |
 | `upstream-cachedance`    | stock upstream + buildkit-cache-dance | `nvidia/cuda` (dockerhub)  | dockerhub   | via cache-dance (`actions/cache`) |
-| `clipper-registry-cache` | clipper, eager apply                  | `clipper.dev/clipper/cuda` | clipper.dev | no                                |
+| `clipper-baseline`       | clipper, eager apply                  | `clipper.dev/clipper/cuda` | clipper.dev | no                                |
 | `clipper-cache-mount`    | clipper, eager apply                  | `clipper.dev/clipper/cuda` | clipper.dev | yes (registry-backed)             |
 | `clipper-lazy-fuse`      | clipper, lazy FUSE snapshotter        | `clipper.dev/clipper/cuda` | clipper.dev | yes (registry-backed)             |
 

@@ -36,8 +36,8 @@ on:
         default: ghcr.io/clipper-registry/buildkit:latest
         type: string
       scenarios:
-        description: space-separated scenarios to run (e.g. "clipper-registry-cache clipper-cache-mount clipper-lazy-fuse" to skip the upstream baselines)
-        default: upstream-baseline upstream-cachedance clipper-registry-cache clipper-cache-mount clipper-lazy-fuse
+        description: space-separated scenarios to run (e.g. "clipper-baseline clipper-cache-mount clipper-lazy-fuse" to skip the upstream baselines)
+        default: upstream-baseline upstream-cachedance clipper-baseline clipper-cache-mount clipper-lazy-fuse
         type: string
 
 permissions:
@@ -63,7 +63,7 @@ jobs:
     steps:
       - id: set
         env:
-          SCENARIOS: ${{ inputs.scenarios || 'upstream-baseline upstream-cachedance clipper-registry-cache clipper-cache-mount clipper-lazy-fuse' }}
+          SCENARIOS: ${{ inputs.scenarios || 'upstream-baseline upstream-cachedance clipper-baseline clipper-cache-mount clipper-lazy-fuse' }}
         run: |
           arr=""
           for s in $SCENARIOS; do
@@ -83,6 +83,24 @@ jobs:
     steps:
       - name: Checkout benchmarks
         uses: actions/checkout@v7
+
+      # GitHub rotates jobs across different host CPUs, which is the main source
+      # of timing noise. Record the actual hardware so runs can be bucketed (or
+      # outliers discarded) by CPU model.
+      - name: Runner hardware
+        run: |
+          {
+            echo "## Runner hardware (${{ matrix.scenario }})"
+            echo '```'
+            lscpu | grep -E 'Model name|^CPU\(s\)|Thread|Core|Socket'
+            echo
+            free -h
+            echo
+            df -h /
+            echo
+            echo "runner: $RUNNER_NAME ($RUNNER_OS/$RUNNER_ARCH)"
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -244,11 +262,21 @@ jobs:
               }
               END {
                 n=0; for (l in seen) lab[n++]=l
-                for (i=0;i<n;i++) for (j=i+1;j<n;j++) if (lab[j]<lab[i]) { t=lab[i];lab[i]=lab[j];lab[j]=t }
+                # Effective total (with the cache-dance fold) and bucket per label.
+                for (i=0;i<n;i++) { l=lab[i]
+                  eff[l] = tot[l] + 0
+                  if (l=="upstream-cachedance") eff[l] += di + de
+                  bkt[l] = (l ~ /^upstream/) ? 0 : ((l ~ /^clipper/) ? 1 : 2)
+                }
+                # Sort: upstream bucket first, then clipper; by total (time) within each.
+                for (i=0;i<n;i++) for (j=i+1;j<n;j++) {
+                  a=lab[i]; b2=lab[j]
+                  if (bkt[b2] < bkt[a] || (bkt[b2]==bkt[a] && eff[b2] < eff[a])) { lab[i]=b2; lab[j]=a }
+                }
                 for (i=0;i<n;i++) { l=lab[i]
                   if (l in pl) {
-                    p=pl[l]; b=bd[l]; x=ex[l]; tt=tot[l]+0
-                    if (l=="upstream-cachedance") { p+=di; x+=de; tt+=di+de }
+                    p=pl[l]; b=bd[l]; x=ex[l]; tt=eff[l]
+                    if (l=="upstream-cachedance") { p+=di; x+=de }
                     printf "| %s | %s | %.1f | %.1f | %.1f | %d |\n", l, ec[l], p, b, x, tt
                   } else {
                     printf "| %s | %s | - | - | - | %s |\n", l, ec[l], tot[l]

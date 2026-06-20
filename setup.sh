@@ -2,7 +2,7 @@
 # Create one buildx builder PER SCENARIO. Scenarios must NOT share a builder:
 # a shared builder lets a later scenario reuse an earlier one's already-pulled
 # and extracted layers (clipper-cache-mount was silently warmed by
-# clipper-registry-cache on the shared eager builder, so it never paid the cold
+# clipper-baseline on the shared eager builder, so it never paid the cold
 # pull -- making the eager-vs-lazy comparison meaningless). Separate builders =>
 # every scenario runs cold. Idempotent.
 set -euo pipefail
@@ -54,10 +54,10 @@ case "$want" in upstream-baseline|all) create_or_replace "bench-upstream-baselin
 # a registry).
 case "$want" in upstream-cachedance|all) create_or_replace "bench-upstream-cachedance" "$UPSTREAM_IMAGE" "$EAGER_FLAGS" ;; esac
 
-# clipper-registry-cache + clipper-cache-mount: clipper-aware, eager applier
+# clipper-baseline + clipper-cache-mount: clipper-aware, eager applier
 # (default snapshotter). Separate builders so clipper-cache-mount pulls+extracts
-# the base cold instead of reusing clipper-registry-cache's already-extracted one.
-case "$want" in clipper-registry-cache|all) create_or_replace "bench-clipper-registry-cache" "$CLIPPER_IMAGE" "$EAGER_FLAGS" ;; esac
+# the base cold instead of reusing clipper-baseline's already-extracted one.
+case "$want" in clipper-baseline|all) create_or_replace "bench-clipper-baseline" "$CLIPPER_IMAGE" "$EAGER_FLAGS" ;; esac
 case "$want" in clipper-cache-mount|all) create_or_replace "bench-clipper-cache-mount" "$CLIPPER_IMAGE" "$EAGER_FLAGS" ;; esac
 
 # clipper-lazy-fuse: clipper-aware, lazy FUSE snapshotter.
