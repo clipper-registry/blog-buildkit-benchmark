@@ -24,6 +24,10 @@ cache_repo="$6"
 dockerfile="$7"
 mount_flag="${8:-}"
 
+# The build context is the Dockerfile's own directory (each workload is
+# self-contained: e.g. uv/ carries pyproject.toml).
+context="$(dirname "$dockerfile")"
+
 # Runtime base for the final stage: the devel base with -devel- -> -runtime-.
 runtime_base="${base/-devel-/-runtime-}"
 

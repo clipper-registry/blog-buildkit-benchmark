@@ -169,7 +169,7 @@ jobs:
         with:
           builder: bench-${{ matrix.cell }}
           cache-dir: ${{ matrix.cell }}-cache-mounts
-          dockerfile: ${{ startsWith(matrix.cell, 'uv-') && 'Dockerfile.uv' || 'Dockerfile' }}
+          dockerfile: ${{ startsWith(matrix.cell, 'uv-') && 'uv/Dockerfile' || 'llamacpp/Dockerfile' }}
 
       - name: Run scenario
         env:

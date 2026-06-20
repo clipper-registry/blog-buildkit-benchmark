@@ -16,10 +16,10 @@ SCENARIOS="${SCENARIOS:-upstream-baseline upstream-cachedance clipper-baseline c
 # it to the one cell for the current matrix runner. Default: every cell.
 CELLS="${CELLS:-}"
 
-# workload -> Dockerfile + cuda image variant (devel compiles llama.cpp; uv only
-# installs prebuilt wheels, so it needs only the runtime base).
-wl_dockerfile() { case "$1" in llamacpp) echo Dockerfile ;; uv) echo Dockerfile.uv ;; esac; }
-wl_variant()    { case "$1" in llamacpp) echo devel ;;       uv) echo runtime ;;        esac; }
+# workload -> cuda image variant (devel compiles llama.cpp; uv only installs
+# prebuilt wheels, so it needs only the runtime base). Each workload's Dockerfile
+# (and any context files) lives in its own directory: <workload>/Dockerfile.
+wl_variant() { case "$1" in llamacpp) echo devel ;; uv) echo runtime ;; esac; }
 
 # run <label> <cmd...>: run a cell in the background under a hard-timeout watchdog.
 run() {
@@ -43,7 +43,7 @@ run() {
 # RUN cache mount). upstream-cachedance is upstream warmed by buildkit-cache-dance
 # in the CI workflow around this build.
 for wl in $WORKLOADS; do
-  df="$(wl_dockerfile "$wl")"
+  df="${wl}/Dockerfile"
   variant="$(wl_variant "$wl")"
   for sc in $SCENARIOS; do
     cell="${wl}-${sc}"
