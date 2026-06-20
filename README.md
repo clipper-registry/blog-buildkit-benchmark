@@ -11,8 +11,9 @@ workloads on a CUDA base, run for every **workload × scenario** cell.
 | `uv`       | `Dockerfile.uv` | `uv sync` ML deps incl. torch (download/IO-bound)    | uv cache (few huge)    | runtime |
 
 They stress opposite ends of cache-mount transfer: `llamacpp`'s ccache is many
-small files; `uv`'s cache is a few multi-GB wheels. Both are multi-stage (build
-stage does the work; a slim runtime stage takes only the result).
+small files; `uv`'s cache is a few multi-GB wheels. `llamacpp` is multi-stage
+(devel base compiles, runtime base takes the binary); `uv` is single-stage on
+the runtime base (uv manages its own Python, so nothing to discard).
 
 ## Scenarios
 
