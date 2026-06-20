@@ -1,14 +1,15 @@
 name: benchmark
 
-# Builds the clipper buildkit fork (moby/buildkit:local), sets up the upstream
-# and clipper-aware builders, runs the benchmark scenarios, and reports the timings.
+# Builds the clipper buildkit fork (moby/buildkit:local), sets up the builders,
+# and runs every workload x scenario "cell" (e.g. llamacpp-clipper-lazy-fuse,
+# uv-upstream-baseline), reporting the timings.
 #
-# Each scenario runs on its OWN runner (matrix) so they all run in parallel and
-# fully cold -- they share no builder, and each writes distinct cache/destination
-# tags (cuda-llamacpp-bench:<scenario>, cuda-llamacpp-bench-cache:<scenario>-<arch>), so parallel runs don't
-# collide. A final `summarize` job collects every scenario's result into one
-# table. Running the scripts locally (`./setup.sh && ./bench.sh`) still does the
-# whole suite sequentially on one machine.
+# Each cell runs on its OWN runner (matrix) so they all run in parallel and fully
+# cold -- they share no builder, and each writes distinct cache/destination tags
+# (cuda-bench:<cell>, cuda-bench-cache:<cell>-<arch>), so parallel runs don't
+# collide. A final `summarize` job collects every cell's result into one table.
+# Running the scripts locally (`./setup.sh && ./bench.sh`) does the whole suite
+# sequentially on one machine.
 #
 # The clipper buildkit image is pulled from ghcr.io using the built-in
 # GITHUB_TOKEN (packages: read) -- no extra secret needed. The ghcr package must
@@ -35,6 +36,10 @@ on:
         description: clipper buildkit image (ghcr, including tag) to benchmark
         default: ghcr.io/clipper-registry/buildkit:latest
         type: string
+      workloads:
+        description: space-separated workloads to run
+        default: llamacpp uv
+        type: string
       scenarios:
         description: space-separated scenarios to run (e.g. "clipper-baseline clipper-cache-mount clipper-lazy-fuse" to skip the upstream baselines)
         default: upstream-baseline upstream-cachedance clipper-baseline clipper-cache-mount clipper-lazy-fuse
@@ -53,33 +58,32 @@ concurrency:
 
 jobs:
   prep:
-    # Expand the (optional) space-separated `scenarios` allowlist into a JSON
-    # array for the matrix below. Defaults to all four (e.g. on push). The
-    # matrix context isn't available in a job-level `if`, so filtering is done
-    # here instead.
+    # Cross-product workloads x scenarios into a JSON array of "<wl>-<scenario>"
+    # cells for the matrix below.
     runs-on: ubuntu-24.04
     outputs:
       matrix: ${{ steps.set.outputs.matrix }}
     steps:
       - id: set
         env:
+          WORKLOADS: ${{ inputs.workloads || 'llamacpp uv' }}
           SCENARIOS: ${{ inputs.scenarios || 'upstream-baseline upstream-cachedance clipper-baseline clipper-cache-mount clipper-lazy-fuse' }}
         run: |
           arr=""
-          for s in $SCENARIOS; do
-            arr="$arr\"$s\","
-          done
+          for w in $WORKLOADS; do for s in $SCENARIOS; do
+            arr="$arr\"$w-$s\","
+          done; done
           echo "matrix=[${arr%,}]" >> "$GITHUB_OUTPUT"
 
   scenario:
     needs: prep
-    name: ${{ matrix.scenario }}
+    name: ${{ matrix.cell }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        scenario: ${{ fromJSON(needs.prep.outputs.matrix) }}
+        cell: ${{ fromJSON(needs.prep.outputs.matrix) }}
     steps:
       - name: Checkout benchmarks
         uses: actions/checkout@v7
@@ -90,7 +94,7 @@ jobs:
       - name: Runner hardware
         run: |
           {
-            echo "## Runner hardware (${{ matrix.scenario }})"
+            echo "## Runner hardware (${{ matrix.cell }})"
             echo '```'
             lscpu | grep -E 'Model name|^CPU\(s\)|Thread|Core|Socket'
             echo
@@ -129,7 +133,7 @@ jobs:
       # upstream-* scenarios use moby/buildkit (set in setup.sh), so they don't
       # need this pull.
       - name: Pull clipper buildkit image
-        if: contains(matrix.scenario, 'clipper')
+        if: contains(matrix.cell, 'clipper')
         env:
           BUILDKIT_IMAGE: ${{ inputs.buildkit_image || 'ghcr.io/clipper-registry/buildkit:latest' }}
         run: |
@@ -138,7 +142,7 @@ jobs:
           docker tag "$BUILDKIT_IMAGE" moby/buildkit:local
 
       - name: Set up builder
-        run: ./setup.sh ${{ matrix.scenario }}
+        run: ./setup.sh ${{ matrix.cell }}
 
       # upstream-cachedance is the upstream-with-cache-dance scenario: upstream
       # buildkit can't restore a RUN cache mount from a registry the way clipper's
@@ -148,28 +152,28 @@ jobs:
       # against upstream's best option (upstream-cachedance) and against a cold
       # upstream build (upstream-baseline). Only upstream-cachedance does the dance;
       # its restore/save time is added back in the summary.
-      - name: Restore upstream-cachedance cache mounts (cache-dance)
-        if: matrix.scenario == 'upstream-cachedance'
+      - name: Restore cache mounts (cache-dance)
+        if: contains(matrix.cell, 'upstream-cachedance')
         uses: actions/cache@v5
         id: s1dancecache
         with:
-          path: upstream-cachedance-cache-mounts
+          path: ${{ matrix.cell }}-cache-mounts
           # Per-run key (restore-keys for fallback) so save + extraction run every
           # build. A static key hits and skips both, reading export as 0s.
-          key: upstream-cachedance-cache-mounts-${{ github.run_id }}-${{ github.run_attempt }}
+          key: ${{ matrix.cell }}-cache-mounts-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            upstream-cachedance-cache-mounts-
-      - name: Inject upstream-cachedance cache mounts into builder (cache-dance)
-        if: matrix.scenario == 'upstream-cachedance'
+            ${{ matrix.cell }}-cache-mounts-
+      - name: Inject cache mounts into builder (cache-dance)
+        if: contains(matrix.cell, 'upstream-cachedance')
         uses: reproducible-containers/buildkit-cache-dance@v3
         with:
-          builder: bench-upstream-cachedance
-          cache-dir: upstream-cachedance-cache-mounts
-          dockerfile: Dockerfile
+          builder: bench-${{ matrix.cell }}
+          cache-dir: ${{ matrix.cell }}-cache-mounts
+          dockerfile: ${{ startsWith(matrix.cell, 'uv-') && 'Dockerfile.uv' || 'Dockerfile' }}
 
       - name: Run scenario
         env:
-          SCENARIOS: ${{ matrix.scenario }}
+          CELLS: ${{ matrix.cell }}
         run: ./bench.sh
 
       - name: Capture buildkitd daemon log
@@ -178,16 +182,16 @@ jobs:
           # The clipper PHASE markers (solve/exec boundaries) are bklog-timestamped
           # in the daemon log; capture this scenario's builder so the run can be
           # split into pre-exec / compile / export.
-          docker logs "buildx_buildkit_bench-${{ matrix.scenario }}0" > "bench-${{ matrix.scenario }}-daemon.log" 2>&1 || true
+          docker logs "buildx_buildkit_bench-${{ matrix.cell }}0" > "bench-${{ matrix.cell }}-daemon.log" 2>&1 || true
 
       - name: Lazy FUSE pull stats
-        if: ${{ always() && matrix.scenario == 'clipper-lazy-fuse' }}
+        if: ${{ always() && contains(matrix.cell, 'clipper-lazy-fuse') }}
         run: |
-          # bench-clipper-lazy-fuse only runs that scenario, so its clipper content
-          # store after the run == exactly the bytes the lazy FUSE path fetched on
-          # demand. If FUSE were broken (eager fallback) this would balloon to the
-          # whole decompressed image; lazy pulls only the working set.
-          c=buildx_buildkit_bench-clipper-lazy-fuse0
+          # This cell only ran clipper-lazy-fuse, so its clipper content store ==
+          # exactly the bytes the lazy FUSE path fetched on demand. If FUSE were
+          # broken (eager fallback) this would balloon to the whole decompressed
+          # image; lazy pulls only the working set.
+          c=buildx_buildkit_bench-${{ matrix.cell }}0
           store=/var/lib/buildkit/runc-clipper-lazy/snapshots/clipper/content
           : > fuse-stats.txt
           echo "bytes fetched on demand:" >> fuse-stats.txt
@@ -200,7 +204,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: results-${{ matrix.scenario }}
+          name: results-${{ matrix.cell }}
           path: |
             results.txt
             *-build.log
@@ -222,34 +226,30 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # upstream-cachedance restores/saves its RUN cache mount in out-of-band
-          # workflow steps (actions/cache + buildkit-cache-dance), outside the timed
-          # build, whereas clipper does it inside the build. Measure that time and
-          # show it in its own columns (import = restore+inject before the build,
-          # export = Post extract+save after); it is still added to the total.
-          # Split by whether the step name starts with "Post ".
+          # Per-workload cache-dance overhead: for each "<wl>-upstream-cachedance"
+          # job, sum its restore+inject (import, pre-build) and Post extract+save
+          # (export, post-build) steps. Passed to awk as "wl:import:export ...".
           jobs_api="repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs"
-          dance_import=$(gh api "$jobs_api" --paginate \
-            --jq '[.jobs[] | select(.name=="upstream-cachedance") | .steps[]
-                   | select((.name | test("cache-dance")) and (.name | startswith("Post ") | not) and .started_at != null and .completed_at != null)
-                   | ((.completed_at | fromdateiso8601) - (.started_at | fromdateiso8601))] | add // 0' \
-            2>/dev/null || echo 0)
-          dance_export=$(gh api "$jobs_api" --paginate \
-            --jq '[.jobs[] | select(.name=="upstream-cachedance") | .steps[]
-                   | select((.name | test("cache-dance")) and (.name | startswith("Post ")) and .started_at != null and .completed_at != null)
-                   | ((.completed_at | fromdateiso8601) - (.started_at | fromdateiso8601))] | add // 0' \
-            2>/dev/null || echo 0)
-          case "$dance_import" in (*[!0-9]*|"") dance_import=0 ;; esac
-          case "$dance_export" in (*[!0-9]*|"") dance_export=0 ;; esac
+          dance=""
+          for job in $(gh api "$jobs_api" --paginate --jq '.jobs[].name | select(endswith("upstream-cachedance"))'); do
+            wl="${job%-upstream-cachedance}"
+            imp=$(gh api "$jobs_api" --paginate --jq "[.jobs[]|select(.name==\"$job\")|.steps[]|select((.name|test(\"cache-dance\")) and (.name|startswith(\"Post \")|not) and .started_at!=null and .completed_at!=null)|((.completed_at|fromdateiso8601)-(.started_at|fromdateiso8601))]|add // 0")
+            exp=$(gh api "$jobs_api" --paginate --jq "[.jobs[]|select(.name==\"$job\")|.steps[]|select((.name|test(\"cache-dance\")) and (.name|startswith(\"Post \")) and .started_at!=null and .completed_at!=null)|((.completed_at|fromdateiso8601)-(.started_at|fromdateiso8601))]|add // 0")
+            case "$imp" in (*[!0-9]*|"") imp=0 ;; esac
+            case "$exp" in (*[!0-9]*|"") exp=0 ;; esac
+            dance="$dance ${wl}:${imp}:${exp}"
+          done
           {
             echo "## Benchmark results"
-            echo "Phases partition the real total (parsed from each scenario's buildx log): pull ends when the last base-image fetch completes (resolve + cache-manifest import + layer download/extract), export is the image + registry-cache push, and build is the remainder (stage RUN steps; for the lazy snapshotter this includes the on-demand fetches during exec)."
+            echo "Phases partition each cell's real total (from its buildx log): pull = base resolve + cache-manifest import + layer download/extract; export = image + registry-cache push; build = the remainder (stage RUN steps; for lazy-fuse, on-demand fetches during exec). upstream-cachedance's out-of-band buildkit-cache-dance time is shown in the dance columns and added to its total."
             echo
-            echo "upstream-cachedance restores/saves its RUN cache mount with buildkit-cache-dance in steps outside the timed build; that time is shown in the dance import/export columns and added to its total (clipper does the equivalent inside its build phases)."
-            echo
-            echo '| scenario | exit | dance import (s) | pull (s) | build (s) | export (s) | dance export (s) | total (s) |'
-            echo '| --- | --- | --- | --- | --- | --- | --- | --- |'
-            awk -v di="$dance_import" -v de="$dance_export" '
+            echo '| workload | scenario | exit | dance import (s) | pull (s) | build (s) | export (s) | dance export (s) | total (s) |'
+            echo '| --- | --- | --- | --- | --- | --- | --- | --- | --- |'
+            awk -v dance="$dance" '
+              BEGIN {
+                m=split(dance, parts, " ")
+                for (k=1;k<=m;k++) { if (parts[k]=="") continue; split(parts[k], kv, ":"); di[kv[1]]=kv[2]+0; de[kv[1]]=kv[3]+0 }
+              }
               /^RESULT label=/ {
                 l=$0; sub(/.*label=/,"",l); sub(/ .*/,"",l); gsub(/"/,"",l)
                 e=$0; sub(/.*exit=/,"",e); sub(/ .*/,"",e)
@@ -265,37 +265,36 @@ jobs:
               }
               END {
                 n=0; for (l in seen) lab[n++]=l
-                # Effective total (with the cache-dance fold) and bucket per label.
                 for (i=0;i<n;i++) { l=lab[i]
-                  eff[l] = tot[l] + 0
-                  if (l=="upstream-cachedance") eff[l] += di + de
-                  bkt[l] = (l ~ /^upstream/) ? 0 : ((l ~ /^clipper/) ? 1 : 2)
+                  wl[l]=substr(l,1,index(l,"-")-1); sc[l]=substr(l,index(l,"-")+1)
+                  eff[l]=tot[l]+0
+                  if (sc[l]=="upstream-cachedance") eff[l]+=di[wl[l]]+de[wl[l]]
+                  bkt[l]=(sc[l] ~ /^upstream/)?0:((sc[l] ~ /^clipper/)?1:2)
                 }
-                # Sort: upstream bucket first, then clipper; slowest-to-fastest
-                # (descending total) within each bucket.
-                for (i=0;i<n;i++) for (j=i+1;j<n;j++) {
-                  a=lab[i]; b2=lab[j]
-                  if (bkt[b2] < bkt[a] || (bkt[b2]==bkt[a] && eff[b2] > eff[a])) { lab[i]=b2; lab[j]=a }
+                # Sort: workload asc, upstream-before-clipper, then total desc.
+                for (i=0;i<n;i++) for (j=i+1;j<n;j++) { p1=lab[i]; p2=lab[j]
+                  if (wl[p2]<wl[p1] || (wl[p2]==wl[p1] && bkt[p2]<bkt[p1]) || (wl[p2]==wl[p1] && bkt[p2]==bkt[p1] && eff[p2]>eff[p1])) { lab[i]=p2; lab[j]=p1 }
                 }
                 for (i=0;i<n;i++) { l=lab[i]
                   if (l in pl) {
-                    if (l=="upstream-cachedance") { dis=sprintf("%d", di); des=sprintf("%d", de) }
-                    else { dis="-"; des="-" }
-                    printf "| %s | %s | %s | %.1f | %.1f | %.1f | %s | %d |\n", l, ec[l], dis, pl[l], bd[l], ex[l], des, eff[l]
+                    if (sc[l]=="upstream-cachedance") { dis=sprintf("%d", di[wl[l]]); des=sprintf("%d", de[wl[l]]) } else { dis="-"; des="-" }
+                    printf "| %s | %s | %s | %s | %.1f | %.1f | %.1f | %s | %d |\n", wl[l], sc[l], ec[l], dis, pl[l], bd[l], ex[l], des, eff[l]
                   } else {
-                    printf "| %s | %s | - | - | - | - | - | %s |\n", l, ec[l], tot[l]
+                    printf "| %s | %s | %s | - | - | - | - | - | %s |\n", wl[l], sc[l], ec[l], tot[l]
                   }
                 }
-                if (n==0) print "| (no results) | | | | | | | |"
+                if (n==0) print "| (no results) | | | | | | | | |"
               }
-            ' artifacts/*/results.txt 2>/dev/null || echo '| (no results) | | | | | | | |'
-            if [ -f artifacts/results-clipper-lazy-fuse/fuse-stats.txt ]; then
+            ' artifacts/*/results.txt 2>/dev/null || echo '| (no results) | | | | | | | | |'
+            for f in artifacts/results-*-clipper-lazy-fuse/fuse-stats.txt; do
+              [ -f "$f" ] || continue
+              cell="${f#artifacts/results-}"; cell="${cell%/fuse-stats.txt}"
               echo
-              echo "## Lazy FUSE pull stats (clipper-lazy-fuse)"
+              echo "## Lazy FUSE pull stats ($cell)"
               echo '```'
-              cat artifacts/results-clipper-lazy-fuse/fuse-stats.txt
+              cat "$f"
               echo '```'
-            fi
+            done
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload combined logs

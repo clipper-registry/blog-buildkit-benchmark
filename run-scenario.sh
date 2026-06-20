@@ -21,7 +21,8 @@ base="$3"
 target="$4"
 output="$5"
 cache_repo="$6"
-mount_flag="${7:-}"
+dockerfile="$7"
+mount_flag="${8:-}"
 
 # Runtime base for the final stage: the devel base with -devel- -> -runtime-.
 runtime_base="${base/-devel-/-runtime-}"
@@ -68,6 +69,7 @@ fi
 
 start=$SECONDS
 if docker buildx build --builder "$builder" \
+        --file "$dockerfile" \
         --build-arg "BASE_IMAGE=${base}" \
         --build-arg "RUNTIME_BASE=${runtime_base}" \
         --build-arg "CACHE_BUST=$(date +%s%N)" \

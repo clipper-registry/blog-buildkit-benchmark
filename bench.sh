@@ -1,36 +1,35 @@
 #!/usr/bin/env bash
-# Run all benchmark scenarios. Continue past a failing scenario so the rest
-# still run and report; exit non-zero at the end if any scenario failed.
-#
-# Each scenario runs under a hard timeout (GIVEUP): healthy scenarios finish in
-# ~1-2.5min, so one still running well past that is hung -- kill it so the run
-# completes and still reports the others.
+# Run benchmark cells (workload x scenario). Continue past a failing cell so the
+# rest still run and report; exit non-zero at the end if any failed. Each cell
+# runs under a hard timeout (GIVEUP) so a hung one doesn't block the rest.
 : >results.txt
 
 arch="$(dpkg --print-architecture)"
-cuda="clipper.dev/clipper/cuda:12.9.0-devel-ubuntu24.04-${arch}"
 export CACHE_SUFFIX="-${arch}"
 
-GIVEUP=600    # hard cap per scenario
-
+GIVEUP=900
 rc_any=0
 
-# run <./run-scenario.sh> <id> <builder> ... : run a scenario in the background
-# under a hard-timeout watchdog. Skips the scenario if it's not in $SCENARIOS (a
-# space-separated allowlist; defaults to all), letting a run target a subset
-# (e.g. "clipper-baseline clipper-cache-mount clipper-lazy-fuse" to skip the upstream baselines).
+WORKLOADS="${WORKLOADS:-llamacpp uv}"
+SCENARIOS="${SCENARIOS:-upstream-baseline upstream-cachedance clipper-baseline clipper-cache-mount clipper-lazy-fuse}"
+# CELLS optionally restricts to specific "<workload>-<scenario>" cells; CI sets
+# it to the one cell for the current matrix runner. Default: every cell.
+CELLS="${CELLS:-}"
+
+# workload -> Dockerfile + cuda image variant (devel compiles llama.cpp; uv only
+# installs prebuilt wheels, so it needs only the runtime base).
+wl_dockerfile() { case "$1" in llamacpp) echo Dockerfile ;; uv) echo Dockerfile.uv ;; esac; }
+wl_variant()    { case "$1" in llamacpp) echo devel ;;       uv) echo runtime ;;        esac; }
+
+# run <label> <cmd...>: run a cell in the background under a hard-timeout watchdog.
 run() {
-  local id="$2"
-  case " ${SCENARIOS:-upstream-baseline upstream-cachedance clipper-baseline clipper-cache-mount clipper-lazy-fuse} " in
-    *" $id "*) ;;
-    *) echo "skipping $id (not in SCENARIOS='${SCENARIOS}')"; return ;;
-  esac
+  local label="$1"; shift
   "$@" &
   local bpid=$! start=$SECONDS
   while kill -0 "$bpid" 2>/dev/null; do
     sleep 15
     if [ "$((SECONDS - start))" -ge "$GIVEUP" ]; then
-      echo "  $id exceeded ${GIVEUP}s -> killing"
+      echo "  $label exceeded ${GIVEUP}s -> killing"
       kill "$bpid" 2>/dev/null
       break
     fi
@@ -38,20 +37,34 @@ run() {
   wait "$bpid" 2>/dev/null || rc_any=1
 }
 
-# One builder per scenario (see setup.sh) so each runs cold -- no scenario
-# reuses another's pulled/extracted layers.
-#
-# upstream-baseline      = upstream buildkit, cold baseline.
-# upstream-cachedance    = upstream buildkit warmed by buildkit-cache-dance -- the
-#            dance (inject/extract of the RUN cache mounts via actions/cache) runs
-#            in the CI workflow around this; here it's just the same upstream build.
-#            The fair "what upstream CAN do" comparison vs clipper's cache-mount.
-# clipper-*               = clipper (registry-cache, then cache-mount, then lazy-fuse).
-run ./run-scenario.sh upstream-baseline   bench-upstream-baseline   nvidia/cuda:12.9.0-devel-ubuntu24.04 docker.io/clipperregistry/cuda-llamacpp-bench:upstream-baseline   image   docker.io/clipperregistry/cuda-llamacpp-bench-cache
-run ./run-scenario.sh upstream-cachedance bench-upstream-cachedance nvidia/cuda:12.9.0-devel-ubuntu24.04 docker.io/clipperregistry/cuda-llamacpp-bench:upstream-cachedance image   docker.io/clipperregistry/cuda-llamacpp-bench-cache
-run ./run-scenario.sh clipper-baseline bench-clipper-baseline "$cuda"                         clipper.dev/clipper/cuda-llamacpp-bench:clipper-baseline clipper clipper.dev/clipper/cuda-llamacpp-bench-cache
-run ./run-scenario.sh clipper-cache-mount    bench-clipper-cache-mount    "$cuda"                         clipper.dev/clipper/cuda-llamacpp-bench:clipper-cache-mount    clipper clipper.dev/clipper/cuda-llamacpp-bench-cache --mount
-run ./run-scenario.sh clipper-lazy-fuse      bench-clipper-lazy-fuse      "$cuda"                         clipper.dev/clipper/cuda-llamacpp-bench:clipper-lazy-fuse      clipper clipper.dev/clipper/cuda-llamacpp-bench-cache --mount
+# One builder per cell (see setup.sh) so each runs cold. The scenario half picks
+# the engine: upstream-* = stock buildkit on dockerhub bases; clipper-* = the
+# clipper fork on clipper.dev bases (cache-mount/lazy-fuse add the registry-backed
+# RUN cache mount). upstream-cachedance is upstream warmed by buildkit-cache-dance
+# in the CI workflow around this build.
+for wl in $WORKLOADS; do
+  df="$(wl_dockerfile "$wl")"
+  variant="$(wl_variant "$wl")"
+  for sc in $SCENARIOS; do
+    cell="${wl}-${sc}"
+    if [ -n "$CELLS" ]; then
+      case " $CELLS " in *" $cell "*) ;; *) continue ;; esac
+    fi
+    case "$sc" in
+      upstream-*)
+        base="nvidia/cuda:12.9.0-${variant}-ubuntu24.04"
+        repo="docker.io/clipperregistry/cuda-bench"
+        output=image ;;
+      clipper-*)
+        base="clipper.dev/clipper/cuda:12.9.0-${variant}-ubuntu24.04-${arch}"
+        repo="clipper.dev/clipper/cuda-bench"
+        output=clipper ;;
+    esac
+    case "$sc" in *cache-mount|*lazy-fuse) mount=--mount ;; *) mount= ;; esac
+    run "$cell" ./run-scenario.sh \
+      "$cell" "bench-${cell}" "$base" "${repo}:${cell}" "$output" "${repo}-cache" "$df" $mount
+  done
+done
 
 echo
 echo "=== RESULTS ==="
