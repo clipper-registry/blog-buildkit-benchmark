@@ -214,12 +214,34 @@ jobs:
           case "$dance" in (*[!0-9]*|"") dance=0 ;; esac
           {
             echo "## Benchmark results"
-            echo '| scenario | exit | build (s) |'
-            echo '| --- | --- | --- |'
-            grep -h '^RESULT' artifacts/*/results.txt 2>/dev/null \
-              | sort \
-              | sed -E 's/RESULT label=("?)([^" ]+)\1 exit=([0-9]+) seconds=([0-9]+)/| \2 | \3 | \4 |/' \
-              || echo '| (no results) | | |'
+            echo "Phases partition the real total (parsed from each scenario's buildx log): pull ends when the last base-image fetch completes (resolve + cache-manifest import + layer download/extract), export is the image + registry-cache push, and build is the remainder (stage RUN steps; for the lazy snapshotter this includes the on-demand fetches during exec)."
+            echo
+            echo '| scenario | exit | total (s) | pull (s) | build (s) | export (s) |'
+            echo '| --- | --- | --- | --- | --- | --- |'
+            awk '
+              /^RESULT label=/ {
+                l=$0; sub(/.*label=/,"",l); sub(/ .*/,"",l); gsub(/"/,"",l)
+                e=$0; sub(/.*exit=/,"",e); sub(/ .*/,"",e)
+                s=$0; sub(/.*seconds=/,"",s); sub(/ .*/,"",s)
+                ec[l]=e; tot[l]=s; seen[l]=1
+              }
+              /^PHASE label=/ {
+                l=$0; sub(/.*label=/,"",l); sub(/ .*/,"",l); gsub(/"/,"",l)
+                p=$0; sub(/.*pull=/,"",p); sub(/ .*/,"",p)
+                b=$0; sub(/.*build=/,"",b); sub(/ .*/,"",b)
+                x=$0; sub(/.*export=/,"",x); sub(/ .*/,"",x)
+                pl[l]=p; bd[l]=b; ex[l]=x; seen[l]=1
+              }
+              END {
+                n=0; for (l in seen) lab[n++]=l
+                for (i=0;i<n;i++) for (j=i+1;j<n;j++) if (lab[j]<lab[i]) { t=lab[i];lab[i]=lab[j];lab[j]=t }
+                for (i=0;i<n;i++) { l=lab[i]
+                  printf "| %s | %s | %s | %s | %s | %s |\n", l, ec[l], tot[l], \
+                    (l in pl)?pl[l]:"-", (l in bd)?bd[l]:"-", (l in ex)?ex[l]:"-"
+                }
+                if (n==0) print "| (no results) | | | | | |"
+              }
+            ' artifacts/*/results.txt 2>/dev/null || echo '| (no results) | | | | | |'
             if [ "$dance" -gt 0 ]; then
               build=$(grep -h '^RESULT' artifacts/results-upstream-cachedance/results.txt 2>/dev/null \
                 | sed -E 's/.*seconds=([0-9]+).*/\1/')

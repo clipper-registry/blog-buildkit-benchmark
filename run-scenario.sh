@@ -76,4 +76,8 @@ else
 fi
 elapsed=$((SECONDS - start))
 printf 'RESULT label=%q exit=%d seconds=%d\n' "$id" "$rc" "$elapsed" | tee -a results.txt
+
+# Split this scenario's real total into pull/build/export phases for the summary.
+printf 'PHASE label=%q %s\n' "$id" "$(./parse-phases.sh "$log" "$elapsed")" | tee -a results.txt
+
 exit "$rc"
