@@ -154,7 +154,16 @@ jobs:
         id: s1dancecache
         with:
           path: upstream-cachedance-cache-mounts
-          key: upstream-cachedance-cache-mounts-${{ hashFiles('Dockerfile') }}
+          # Unique key per run so the save always happens; restore-keys falls back
+          # to the most recent cache. A static key (e.g. hashFiles(Dockerfile))
+          # would hit every run, making actions/cache skip the save and (via
+          # skip-extraction below) skip pulling the freshly CACHE_BUST-mutated
+          # ccache out of the builder -- so the dance export read as 0s and the
+          # cache never updated. We want it to restore + re-extract + save every
+          # run, the real recurring cost clipper pays in-build.
+          key: upstream-cachedance-cache-mounts-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            upstream-cachedance-cache-mounts-
       - name: Inject upstream-cachedance cache mounts into builder (cache-dance)
         if: matrix.scenario == 'upstream-cachedance'
         uses: reproducible-containers/buildkit-cache-dance@v3
@@ -162,7 +171,9 @@ jobs:
           builder: bench-upstream-cachedance
           cache-dir: upstream-cachedance-cache-mounts
           dockerfile: Dockerfile
-          skip-extraction: ${{ steps.s1dancecache.outputs.cache-hit }}
+          # Always extract (default); the per-run key means there's new ccache to
+          # capture and save every build.
+          skip-extraction: false
 
       - name: Run scenario
         env:
@@ -268,10 +279,11 @@ jobs:
                   if (l=="upstream-cachedance") eff[l] += di + de
                   bkt[l] = (l ~ /^upstream/) ? 0 : ((l ~ /^clipper/) ? 1 : 2)
                 }
-                # Sort: upstream bucket first, then clipper; by total (time) within each.
+                # Sort: upstream bucket first, then clipper; slowest-to-fastest
+                # (descending total) within each bucket.
                 for (i=0;i<n;i++) for (j=i+1;j<n;j++) {
                   a=lab[i]; b2=lab[j]
-                  if (bkt[b2] < bkt[a] || (bkt[b2]==bkt[a] && eff[b2] < eff[a])) { lab[i]=b2; lab[j]=a }
+                  if (bkt[b2] < bkt[a] || (bkt[b2]==bkt[a] && eff[b2] > eff[a])) { lab[i]=b2; lab[j]=a }
                 }
                 for (i=0;i<n;i++) { l=lab[i]
                   if (l in pl) {
