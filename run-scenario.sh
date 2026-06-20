@@ -79,7 +79,7 @@ if docker buildx build --builder "$builder" \
         --build-arg "CACHE_BUST=$(date +%s%N)" \
         --output "type=${output},name=${target},push=true" \
         "${cache[@]}" \
-        .; then
+        "$context"; then
     rc=0
 else
     rc=$?
