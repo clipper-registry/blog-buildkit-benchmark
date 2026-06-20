@@ -221,10 +221,10 @@ jobs:
         run: |
           # upstream-cachedance restores/saves its RUN cache mount in out-of-band
           # workflow steps (actions/cache + buildkit-cache-dance), outside the timed
-          # build, whereas clipper does it inside the build. Measure that time so it
-          # can be folded into the phase split: the restore+inject (import) runs
-          # before the build (-> pull), the Post extract+save (export) runs after
-          # (-> export). Split by whether the step name starts with "Post ".
+          # build, whereas clipper does it inside the build. Measure that time and
+          # show it in its own columns (import = restore+inject before the build,
+          # export = Post extract+save after); it is still added to the total.
+          # Split by whether the step name starts with "Post ".
           jobs_api="repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs"
           dance_import=$(gh api "$jobs_api" --paginate \
             --jq '[.jobs[] | select(.name=="upstream-cachedance") | .steps[]
@@ -242,10 +242,10 @@ jobs:
             echo "## Benchmark results"
             echo "Phases partition the real total (parsed from each scenario's buildx log): pull ends when the last base-image fetch completes (resolve + cache-manifest import + layer download/extract), export is the image + registry-cache push, and build is the remainder (stage RUN steps; for the lazy snapshotter this includes the on-demand fetches during exec)."
             echo
-            echo "upstream-cachedance restores/saves its RUN cache mount with buildkit-cache-dance in steps outside the timed build; that import (${dance_import}s) is folded into its pull and that export (${dance_export}s) into its export, so it is comparable to clipper's in-build cache."
+            echo "upstream-cachedance restores/saves its RUN cache mount with buildkit-cache-dance in steps outside the timed build; that time is shown in the dance import/export columns and added to its total (clipper does the equivalent inside its build phases)."
             echo
-            echo '| scenario | exit | pull (s) | build (s) | export (s) | total (s) |'
-            echo '| --- | --- | --- | --- | --- | --- |'
+            echo '| scenario | exit | pull (s) | build (s) | export (s) | dance import (s) | dance export (s) | total (s) |'
+            echo '| --- | --- | --- | --- | --- | --- | --- | --- |'
             awk -v di="$dance_import" -v de="$dance_export" '
               /^RESULT label=/ {
                 l=$0; sub(/.*label=/,"",l); sub(/ .*/,"",l); gsub(/"/,"",l)
@@ -275,16 +275,16 @@ jobs:
                 }
                 for (i=0;i<n;i++) { l=lab[i]
                   if (l in pl) {
-                    p=pl[l]; b=bd[l]; x=ex[l]; tt=eff[l]
-                    if (l=="upstream-cachedance") { p+=di; x+=de }
-                    printf "| %s | %s | %.1f | %.1f | %.1f | %d |\n", l, ec[l], p, b, x, tt
+                    if (l=="upstream-cachedance") { dis=sprintf("%d", di); des=sprintf("%d", de) }
+                    else { dis="-"; des="-" }
+                    printf "| %s | %s | %.1f | %.1f | %.1f | %s | %s | %d |\n", l, ec[l], pl[l], bd[l], ex[l], dis, des, eff[l]
                   } else {
-                    printf "| %s | %s | - | - | - | %s |\n", l, ec[l], tot[l]
+                    printf "| %s | %s | - | - | - | - | - | %s |\n", l, ec[l], tot[l]
                   }
                 }
-                if (n==0) print "| (no results) | | | | | |"
+                if (n==0) print "| (no results) | | | | | | | |"
               }
-            ' artifacts/*/results.txt 2>/dev/null || echo '| (no results) | | | | | |'
+            ' artifacts/*/results.txt 2>/dev/null || echo '| (no results) | | | | | | | |'
             if [ -f artifacts/results-clipper-lazy-fuse/fuse-stats.txt ]; then
               echo
               echo "## Lazy FUSE pull stats (clipper-lazy-fuse)"
