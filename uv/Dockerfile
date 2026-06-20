@@ -9,5 +9,6 @@ COPY pyproject.toml uv.lock ./
 ARG CACHE_BUST
 RUN --mount=type=cache,target=/root/.cache/uv \
     echo "$CACHE_BUST" >/dev/null && \
-    uv sync --frozen --no-progress --compile-bytecode
+    uv sync --frozen --no-progress --compile-bytecode && \
+    uv cache prune --ci
 ENV PATH=/app/.venv/bin:$PATH
