@@ -201,24 +201,34 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # upstream-cachedance runs its cache restore/save in out-of-band workflow
-          # steps (actions/cache + buildkit-cache-dance inject/extract), whereas
-          # clipper does both inside the timed build. Sum the wall-clock of every
-          # cache-dance step (main inject/restore + their Post extract/save) in
-          # the upstream-cachedance job so its overhead is included in the total.
-          dance=$(gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs" --paginate \
+          # upstream-cachedance restores/saves its RUN cache mount in out-of-band
+          # workflow steps (actions/cache + buildkit-cache-dance), outside the timed
+          # build, whereas clipper does it inside the build. Measure that time so it
+          # can be folded into the phase split: the restore+inject (import) runs
+          # before the build (-> pull), the Post extract+save (export) runs after
+          # (-> export). Split by whether the step name starts with "Post ".
+          jobs_api="repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs"
+          dance_import=$(gh api "$jobs_api" --paginate \
             --jq '[.jobs[] | select(.name=="upstream-cachedance") | .steps[]
-                   | select((.name | test("cache-dance")) and .started_at != null and .completed_at != null)
+                   | select((.name | test("cache-dance")) and (.name | startswith("Post ") | not) and .started_at != null and .completed_at != null)
                    | ((.completed_at | fromdateiso8601) - (.started_at | fromdateiso8601))] | add // 0' \
             2>/dev/null || echo 0)
-          case "$dance" in (*[!0-9]*|"") dance=0 ;; esac
+          dance_export=$(gh api "$jobs_api" --paginate \
+            --jq '[.jobs[] | select(.name=="upstream-cachedance") | .steps[]
+                   | select((.name | test("cache-dance")) and (.name | startswith("Post ")) and .started_at != null and .completed_at != null)
+                   | ((.completed_at | fromdateiso8601) - (.started_at | fromdateiso8601))] | add // 0' \
+            2>/dev/null || echo 0)
+          case "$dance_import" in (*[!0-9]*|"") dance_import=0 ;; esac
+          case "$dance_export" in (*[!0-9]*|"") dance_export=0 ;; esac
           {
             echo "## Benchmark results"
             echo "Phases partition the real total (parsed from each scenario's buildx log): pull ends when the last base-image fetch completes (resolve + cache-manifest import + layer download/extract), export is the image + registry-cache push, and build is the remainder (stage RUN steps; for the lazy snapshotter this includes the on-demand fetches during exec)."
             echo
-            echo '| scenario | exit | total (s) | pull (s) | build (s) | export (s) |'
+            echo "upstream-cachedance restores/saves its RUN cache mount with buildkit-cache-dance in steps outside the timed build; that import (${dance_import}s) is folded into its pull and that export (${dance_export}s) into its export, so it is comparable to clipper's in-build cache."
+            echo
+            echo '| scenario | exit | pull (s) | build (s) | export (s) | total (s) |'
             echo '| --- | --- | --- | --- | --- | --- |'
-            awk '
+            awk -v di="$dance_import" -v de="$dance_export" '
               /^RESULT label=/ {
                 l=$0; sub(/.*label=/,"",l); sub(/ .*/,"",l); gsub(/"/,"",l)
                 e=$0; sub(/.*exit=/,"",e); sub(/ .*/,"",e)
@@ -236,26 +246,17 @@ jobs:
                 n=0; for (l in seen) lab[n++]=l
                 for (i=0;i<n;i++) for (j=i+1;j<n;j++) if (lab[j]<lab[i]) { t=lab[i];lab[i]=lab[j];lab[j]=t }
                 for (i=0;i<n;i++) { l=lab[i]
-                  printf "| %s | %s | %s | %s | %s | %s |\n", l, ec[l], tot[l], \
-                    (l in pl)?pl[l]:"-", (l in bd)?bd[l]:"-", (l in ex)?ex[l]:"-"
+                  if (l in pl) {
+                    p=pl[l]; b=bd[l]; x=ex[l]; tt=tot[l]+0
+                    if (l=="upstream-cachedance") { p+=di; x+=de; tt+=di+de }
+                    printf "| %s | %s | %.1f | %.1f | %.1f | %d |\n", l, ec[l], p, b, x, tt
+                  } else {
+                    printf "| %s | %s | - | - | - | %s |\n", l, ec[l], tot[l]
+                  }
                 }
                 if (n==0) print "| (no results) | | | | | |"
               }
             ' artifacts/*/results.txt 2>/dev/null || echo '| (no results) | | | | | |'
-            if [ "$dance" -gt 0 ]; then
-              build=$(grep -h '^RESULT' artifacts/results-upstream-cachedance/results.txt 2>/dev/null \
-                | sed -E 's/.*seconds=([0-9]+).*/\1/')
-              case "$build" in (*[!0-9]*|"") build=0 ;; esac
-              echo
-              echo "## upstream-cachedance total (build + cache-dance)"
-              echo "buildkit-cache-dance restores and saves the cache mounts in separate workflow steps, outside the timed build. Their wall-clock is added here for comparison with clipper's in-build cache."
-              echo
-              echo '| phase | seconds |'
-              echo '| --- | --- |'
-              echo "| build (timed) | ${build} |"
-              echo "| cache-dance (restore + inject + extract + save) | ${dance} |"
-              echo "| total | $((build + dance)) |"
-            fi
             if [ -f artifacts/results-clipper-lazy-fuse/fuse-stats.txt ]; then
               echo
               echo "## Lazy FUSE pull stats (clipper-lazy-fuse)"
