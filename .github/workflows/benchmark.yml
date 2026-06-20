@@ -244,7 +244,7 @@ jobs:
             echo
             echo "upstream-cachedance restores/saves its RUN cache mount with buildkit-cache-dance in steps outside the timed build; that time is shown in the dance import/export columns and added to its total (clipper does the equivalent inside its build phases)."
             echo
-            echo '| scenario | exit | pull (s) | build (s) | export (s) | dance import (s) | dance export (s) | total (s) |'
+            echo '| scenario | exit | dance import (s) | pull (s) | build (s) | export (s) | dance export (s) | total (s) |'
             echo '| --- | --- | --- | --- | --- | --- | --- | --- |'
             awk -v di="$dance_import" -v de="$dance_export" '
               /^RESULT label=/ {
@@ -277,7 +277,7 @@ jobs:
                   if (l in pl) {
                     if (l=="upstream-cachedance") { dis=sprintf("%d", di); des=sprintf("%d", de) }
                     else { dis="-"; des="-" }
-                    printf "| %s | %s | %.1f | %.1f | %.1f | %s | %s | %d |\n", l, ec[l], pl[l], bd[l], ex[l], dis, des, eff[l]
+                    printf "| %s | %s | %s | %.1f | %.1f | %.1f | %s | %d |\n", l, ec[l], dis, pl[l], bd[l], ex[l], des, eff[l]
                   } else {
                     printf "| %s | %s | - | - | - | - | - | %s |\n", l, ec[l], tot[l]
                   }
