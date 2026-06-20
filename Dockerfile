@@ -68,8 +68,13 @@ RUN --mount=type=cache,target=/root/.cache/ccache \
       awk '{p=$2} /Command line:/{sub(/^.*Command line: /,"");cmd[p]=$0} /Result:.*miss/{print cmd[p]}' /tmp/ccache.log 2>/dev/null | sort | uniq -c | sort -rn; \
       rm -f /tmp/ccache.log /tmp/ccache.statslog; } || true
 
-# Install here: the devel stage has cmake and its libs; the runtime stage copies.
-RUN cmake --install build --prefix /opt/llama
+# cmake --install installs all of examples/ + tests/, but only llama-cli is
+# built, so copy just it and its build-tree shared libs into the prefix.
+RUN mkdir -p /opt/llama/bin /opt/llama/lib && \
+    cp build/bin/llama-cli /opt/llama/bin/ && \
+    for lib in $(ldd build/bin/llama-cli | awk '/=> \//{print $3}'); do \
+        case "$lib" in /src/build/*) cp "$lib" /opt/llama/lib/ ;; esac; \
+    done
 
 # Runtime stage (runtime base): just the installed artifacts.
 FROM ${RUNTIME_BASE}
