@@ -15,5 +15,17 @@ ARG CACHE_BUST
 RUN --mount=type=cache,target=/root/.cache/uv/sdists-v9 \
     echo "$CACHE_BUST" >/dev/null && \
     uv sync --frozen --no-progress --compile-bytecode && \
-    uv cache prune --ci
+    uv cache prune --ci && \
+    # Guard: the mount target is uv's sdist cache dir, whose version can bump
+    # (sdists-v9 -> v10). If uv stops using sdists-v9 the mount silently caches
+    # nothing, so fail loud: sdists-v9 must hold the sdist, and no other
+    # sdists-v* dir may be populated.
+    test -d /root/.cache/uv/sdists-v9/pypi || \
+      { echo "FATAL: /root/.cache/uv/sdists-v9/pypi absent after sync -- uv sdist cache dir changed; update the --mount target"; exit 1; } && \
+    for d in /root/.cache/uv/sdists-v*/; do \
+      [ "$d" = /root/.cache/uv/sdists-v9/ ] && continue; \
+      if [ -n "$(ls -A "$d" 2>/dev/null)" ]; then \
+        echo "FATAL: uv populated $d, not the mounted sdists-v9; update the --mount target"; exit 1; \
+      fi; \
+    done
 ENV PATH=/app/.venv/bin:$PATH
