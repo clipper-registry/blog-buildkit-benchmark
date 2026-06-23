@@ -71,7 +71,13 @@ jobs:
         run: |
           arr=""
           for w in $WORKLOADS; do for s in $SCENARIOS; do
-            arr="$arr\"$w-$s\","
+            cell="$w-$s"
+            # uv has no RUN cache mount, so its cache-mount/cachedance cells are
+            # identical to baseline and test nothing -- skip them.
+            case "$cell" in
+              uv-upstream-cachedance|uv-clipper-cache-mount) continue ;;
+            esac
+            arr="$arr\"$cell\","
           done; done
           echo "matrix=[${arr%,}]" >> "$GITHUB_OUTPUT"
 
