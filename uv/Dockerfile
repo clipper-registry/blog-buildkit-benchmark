@@ -14,6 +14,6 @@ ARG CACHE_BUST
 # the venv (same fs) instead of a cross-filesystem copy. rm -rf afterwards keeps
 # the cache out of the exported layer.
 RUN echo "$CACHE_BUST" >/dev/null && \
-    uv sync --frozen --no-progress --compile-bytecode && \
+    uv sync --frozen --no-progress && \
     rm -rf /root/.cache/uv
 ENV PATH=/app/.venv/bin:$PATH
