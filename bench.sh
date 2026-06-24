@@ -69,4 +69,18 @@ done
 echo
 echo "=== RESULTS ==="
 grep '^RESULT' results.txt || echo "(no results)"
+
+# Aggregate the per-cell JSON objects (run-scenario.sh wrote one per cell) into a
+# single results.json array for rendering stats later.
+cell_jsons=()
+for wl in $WORKLOADS; do for sc in $SCENARIOS; do
+  cell="${wl}-${sc}"
+  if [ -n "$CELLS" ]; then case " $CELLS " in *" $cell "*) ;; *) continue ;; esac; fi
+  [ -f "${cell}.json" ] && cell_jsons+=("${cell}.json")
+done; done
+if [ "${#cell_jsons[@]}" -gt 0 ]; then
+  ./to-results-json.sh "${cell_jsons[@]}" >results.json
+  echo "wrote results.json (${#cell_jsons[@]} cells)"
+fi
+
 exit "$rc_any"

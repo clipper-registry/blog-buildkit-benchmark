@@ -88,6 +88,17 @@ elapsed=$((SECONDS - start))
 printf 'RESULT label=%q exit=%d seconds=%d\n' "$id" "$rc" "$elapsed" | tee -a results.txt
 
 # Split this scenario's real total into pull/build/export phases for the summary.
-printf 'PHASE label=%q %s\n' "$id" "$(./parse-phases.sh "$log" "$elapsed")" | tee -a results.txt
+phases="$(./parse-phases.sh "$log" "$elapsed")"   # "pull=<s> build=<s> export=<s>"
+printf 'PHASE label=%q %s\n' "$id" "$phases" | tee -a results.txt
+
+# Emit machine-readable per-cell stats (one JSON object) for later rendering.
+# bench.sh (local) and the CI summary aggregate these into a results.json array.
+pull="${phases#pull=}";    pull="${pull%% *}"
+build="${phases#*build=}"; build="${build%% *}"
+export_s="${phases##*export=}"
+printf '{"label":"%s","workload":"%s","scenario":"%s","arch":"%s","exit":%d,"seconds":%d,"phases":{"pull":%s,"build":%s,"export":%s},"timestamp":"%s"}\n' \
+    "$id" "${id%%-*}" "${id#*-}" "$(dpkg --print-architecture 2>/dev/null || uname -m)" \
+    "$rc" "$elapsed" "${pull:-0}" "${build:-0}" "${export_s:-0}" \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"${id}.json"
 
 exit "$rc"

@@ -194,6 +194,7 @@ jobs:
           name: results-${{ matrix.cell }}
           path: |
             results.txt
+            ${{ matrix.cell }}.json
             *-build.log
             *-daemon.log
             fuse-stats.txt
@@ -275,10 +276,28 @@ jobs:
             ' artifacts/*/results.txt 2>/dev/null || echo '| (no results) | | | | | | | | |'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Build combined results.json
+        if: always()
+        run: |
+          # Aggregate every runner's per-cell JSON object into one array for
+          # rendering stats later (same shape as bench.sh's local results.json).
+          {
+            printf '['
+            sep=''
+            for f in artifacts/*/*.json; do
+              [ -f "$f" ] || continue
+              printf '%s' "$sep"; cat "$f"; sep=','
+            done
+            printf ']\n'
+          } > results.json
+          cat results.json
+
       - name: Upload combined logs
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: benchmark-results
-          path: artifacts/**
+          path: |
+            results.json
+            artifacts/**
           if-no-files-found: ignore
