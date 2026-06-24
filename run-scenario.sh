@@ -44,27 +44,22 @@ exec > >(tee -a "$log") 2>&1
 # Optional CACHE_SUFFIX lets callers point at a fresh (cold) cache key without
 # touching the existing tags, e.g. CACHE_SUFFIX=-t1700000000.
 key="${id}${CACHE_SUFFIX:-}"
-# Clipper scenarios write the cache in clipper (chunked TOC) format. Without
-# compression=clipper the cache export defaults to gzip and re-compresses every
-# layer to gzip, storing both gzip and TOC blobs for nothing (only clipper
-# --cache-from reads this cache). We also version the clipper cache key (-v2):
-# tags written before compression=clipper still carry gzip variants, and upstream
-# all=true re-exports any gzip a --cache-from imports, so the only clean break is
-# a fresh tag. Bump the version to rotate again. Upstream keeps gzip + its key.
-comp=""
+# Clipper scenarios version the cache key (-v2): tags written before the cache
+# was clipper-compressed carried gzip variants, and upstream all=true re-exports
+# any gzip a --cache-from imports, so a fresh tag was the only clean break. Bump
+# the version to rotate again. The cache is written in clipper (TOC) format by
+# the fork's registry-cache default now, so no compression= override is needed.
+# Upstream keeps gzip + its un-versioned key.
 case "$id" in
-    *-clipper-*)
-        comp=",compression=clipper"
-        key="${id}-v2${CACHE_SUFFIX:-}"
-        ;;
+    *-clipper-*) key="${id}-v2${CACHE_SUFFIX:-}" ;;
 esac
 cache=(
-    --cache-to   "type=registry,ref=${cache_repo}:${key},mode=max${comp}"
+    --cache-to   "type=registry,ref=${cache_repo}:${key},mode=max"
     --cache-from "type=registry,ref=${cache_repo}:${key}"
 )
 if [ "$mount_flag" = "--mount" ]; then
     cache+=(
-        --cache-to   "type=registry,ref=${cache_repo}:${key}-mounts,mode=cache-mount${comp}"
+        --cache-to   "type=registry,ref=${cache_repo}:${key}-mounts,mode=cache-mount"
         --cache-from "type=registry,ref=${cache_repo}:${key}-mounts,mode=cache-mount"
     )
 fi
