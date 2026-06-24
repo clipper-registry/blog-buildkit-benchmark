@@ -44,13 +44,20 @@ exec > >(tee -a "$log") 2>&1
 # Optional CACHE_SUFFIX lets callers point at a fresh (cold) cache key without
 # touching the existing tags, e.g. CACHE_SUFFIX=-t1700000000.
 key="${id}${CACHE_SUFFIX:-}"
+# Clipper builds should write the registry cache in clipper (chunked TOC) format.
+# Without compression=clipper the cache export defaults to gzip and re-compresses
+# every layer back to gzip -- storing BOTH gzip blobs and the TOC blobs (the
+# 19-layer cache manifest) and paying the gzip re-compress for nothing (only
+# clipper --cache-from consumes this cache). Upstream scenarios keep gzip.
+comp=""
+case "$id" in *-clipper-*) comp=",compression=clipper" ;; esac
 cache=(
-    --cache-to   "type=registry,ref=${cache_repo}:${key},mode=max"
+    --cache-to   "type=registry,ref=${cache_repo}:${key},mode=max${comp}"
     --cache-from "type=registry,ref=${cache_repo}:${key}"
 )
 if [ "$mount_flag" = "--mount" ]; then
     cache+=(
-        --cache-to   "type=registry,ref=${cache_repo}:${key}-mounts,mode=cache-mount"
+        --cache-to   "type=registry,ref=${cache_repo}:${key}-mounts,mode=cache-mount${comp}"
         --cache-from "type=registry,ref=${cache_repo}:${key}-mounts,mode=cache-mount"
     )
 fi
