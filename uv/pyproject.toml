@@ -3,11 +3,7 @@ name = "ml-bench"
 version = "0"
 requires-python = "==3.14.*"
 dependencies = [
-    "torch",
-    "torchvision",
-    "torchaudio",
     "tensorrt",
-    "transformers",
     "accelerate",
     "datasets",
     "scipy",
