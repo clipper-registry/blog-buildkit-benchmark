@@ -7,7 +7,7 @@
 set -euo pipefail
 
 # Upstream buildkit image for the baseline. Pinned for a stable comparison.
-UPSTREAM_IMAGE="${UPSTREAM_IMAGE:-moby/buildkit:v0.30.0}"
+UPSTREAM_IMAGE="${UPSTREAM_IMAGE:-moby/buildkit:v0.31.0}"
 # Clipper fork image (`docker buildx bake image` -> moby/buildkit:local).
 CLIPPER_IMAGE="${CLIPPER_IMAGE:-moby/buildkit:local}"
 
