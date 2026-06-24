@@ -96,9 +96,11 @@ printf 'PHASE label=%q %s\n' "$id" "$phases" | tee -a results.txt
 pull="${phases#pull=}";    pull="${pull%% *}"
 build="${phases#*build=}"; build="${build%% *}"
 export_s="${phases##*export=}"
-printf '{"label":"%s","workload":"%s","scenario":"%s","arch":"%s","exit":%d,"seconds":%d,"phases":{"pull":%s,"build":%s,"export":%s},"timestamp":"%s"}\n' \
+# dance is null locally (cache-dance warming only happens in CI); total == seconds
+# with no dance. The CI summary fills dance/total for the upstream-cachedance cell.
+printf '{"label":"%s","workload":"%s","scenario":"%s","arch":"%s","exit":%d,"seconds":%d,"phases":{"pull":%s,"build":%s,"export":%s},"dance":null,"total":%d,"timestamp":"%s"}\n' \
     "$id" "${id%%-*}" "${id#*-}" "$(dpkg --print-architecture 2>/dev/null || uname -m)" \
-    "$rc" "$elapsed" "${pull:-0}" "${build:-0}" "${export_s:-0}" \
+    "$rc" "$elapsed" "${pull:-0}" "${build:-0}" "${export_s:-0}" "$elapsed" \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"${id}.json"
 
 exit "$rc"

@@ -272,25 +272,23 @@ jobs:
                   }
                 }
                 if (n==0) print "| (no results) | | | | | | | | |"
+
+                # Machine-readable results.json: same data as the table, with
+                # per-cell phases, cache-dance import/export, and effective total.
+                rj="["; rsep=""
+                for (i=0;i<n;i++) { l=lab[i]
+                  if (sc[l]=="upstream-cachedance") dj=sprintf("{\"import\":%d,\"export\":%d}",di[wl[l]]+0,de[wl[l]]+0)
+                  else dj="null"
+                  if (l in pl)
+                    obj=sprintf("{\"label\":\"%s\",\"workload\":\"%s\",\"scenario\":\"%s\",\"exit\":%d,\"seconds\":%d,\"phases\":{\"pull\":%.1f,\"build\":%.1f,\"export\":%.1f},\"dance\":%s,\"total\":%d}",l,wl[l],sc[l],ec[l]+0,tot[l]+0,pl[l]+0,bd[l]+0,ex[l]+0,dj,eff[l]+0)
+                  else
+                    obj=sprintf("{\"label\":\"%s\",\"workload\":\"%s\",\"scenario\":\"%s\",\"exit\":%d,\"seconds\":%d,\"phases\":null,\"dance\":%s,\"total\":%d}",l,wl[l],sc[l],ec[l]+0,tot[l]+0,dj,eff[l]+0)
+                  rj=rj rsep obj; rsep=","
+                }
+                print rj "]" > "results.json"
               }
             ' artifacts/*/results.txt 2>/dev/null || echo '| (no results) | | | | | | | | |'
           } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Build combined results.json
-        if: always()
-        run: |
-          # Aggregate every runner's per-cell JSON object into one array for
-          # rendering stats later (same shape as bench.sh's local results.json).
-          {
-            printf '['
-            sep=''
-            for f in artifacts/*/*.json; do
-              [ -f "$f" ] || continue
-              printf '%s' "$sep"; cat "$f"; sep=','
-            done
-            printf ']\n'
-          } > results.json
-          cat results.json
 
       - name: Upload combined logs
         if: always()
