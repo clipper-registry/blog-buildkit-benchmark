@@ -41,7 +41,7 @@ RUN --mount=type=cache,target=/root/.cache/ccache \
 
 RUN mkdir -p /opt/llama/bin /opt/llama/lib && \
     cp build/bin/llama-cli /opt/llama/bin/ && \
-    find build -name '*.so*' -type f -exec cp -t /opt/llama/lib/ {}
+    find build -name '*.so*' -type f -exec cp -t /opt/llama/lib/ {} +
 
 FROM ${RUNTIME_BASE}
 COPY --from=build /opt/llama /usr/local
