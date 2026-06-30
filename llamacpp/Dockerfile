@@ -12,7 +12,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 
 ARG CCACHE_VERSION=4.13.6
 ARG TARGETARCH
-RUN --mount=type=tmpfs,target=/tmp
+RUN --mount=type=tmpfs,target=/tmp \
     case "$TARGETARCH" in \
         amd64) cc_arch=x86_64 ;; \
         arm64) cc_arch=aarch64 ;; \
